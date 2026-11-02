@@ -6,11 +6,13 @@ fastapi>=0.115,<1.0
 uvicorn[standard]>=0.34
 sqlalchemy[asyncio]>=2.0.36
 asyncpg>=0.30
+aiosqlite>=0.20
 redis>=5.2
 httpx>=0.28
 pydantic>=2.10
 pydantic-settings>=2.7
 python-multipart>=0.0.20
+cryptography>=43.0
 
 # 平台 SDK：飞书长连接、钉钉 Stream 模式（免公网回调）
 lark-oapi>=1.4
