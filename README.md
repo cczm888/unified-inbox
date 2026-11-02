@@ -1,17 +1,26 @@
 # 统一消息收件箱 · 多平台连接器（赛题 A）
 
-一个部署单元同时接入 **飞书 / 钉钉 / Telegram** 三个平台，把外部消息归一化成内部标准格式，
+[![CI](https://github.com/cczm888/unified-inbox/actions/workflows/ci.yml/badge.svg)](https://github.com/cczm888/unified-inbox/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](backend/requirements.txt)
+[![Vue](https://img.shields.io/badge/Vue-3-42b883?logo=vue.js&logoColor=white)](web/package.json)
+
+一个部署单元同时接入 **飞书 / 邮箱 / Telegram / 钉钉** 多个平台，把外部消息归一化成内部标准格式，
 在一个网页收件箱里完成 **接收 → 统一展示 → 处理 → 发送反馈 → 状态回流** 的完整闭环。
 
-## 1. 为什么这样选平台
+## 1. 接入方式与当前实测状态
 
-| 平台 | 接入方式 | 是否需要公网域名 | 审核 | 说明 |
+| 平台 | 接入方式 | 是否需要公网域名 | 审核 | 实测状态 |
 | --- | --- | --- | --- | --- |
-| 飞书 | WebSocket 长连接（`lark-oapi` ws.Client） | 不需要 | 个人可建企业自建应用，即时生效 | 主平台，事件订阅选「长连接」 |
-| 钉钉 | Stream 模式（`dingtalk-stream`） | 不需要 | 应用内开机器人，选 Stream 模式 | 第二平台，出站可直接用 sessionWebhook |
-| Telegram | HTTP 长轮询 `getUpdates` | 不需要 | @BotFather 生成即用 | 第三平台，拿「≥3 平台 +3 分」 |
+| 飞书 | WebSocket 长连接（`lark-oapi` ws.Client） | 不需要 | 个人可建企业自建应用，即时生效 | **已端到端跑通**：入站 → 网页 → 回复 → 飞书收到 → 状态回流 |
+| 邮箱 | IMAP 收 + SMTP 发（标准协议） | 不需要 | 无 | **代码完成，待填授权码**：任一支持 IMAP 的邮箱（QQ/163/Gmail/企业邮） |
+| Telegram | HTTP 长轮询 `getUpdates` | 不需要 | @BotFather 生成即用 | 代码完成，待填 Bot Token |
+| 钉钉 | Stream 模式（`dingtalk-stream`） | 不需要 | 需组织管理员开开发者权限 | 代码完成；个人账号卡在「不是管理员」，需先建自己的组织 |
 
-三个平台全部是**出站长连接**，因此部署在一台没有公网 IP、没有备案域名的机器（甚至家里的笔记本）上即可跑通全流程 —— 这是本题最大的工程陷阱，很多队伍会卡在「回调地址必须是公网 HTTPS」上。
+全部平台都是**出站长连接**，因此部署在一台没有公网 IP、没有备案域名的机器（甚至家里的笔记本）上即可跑通全流程 —— 这是本题最大的工程陷阱，很多队伍会卡在「回调地址必须是公网 HTTPS」上。
+
+平台还可以**运行时接入**：打开网页 → 右上「账号」→ 抽屉底部「接入新平台」→ 选平台、填凭证 → 立即生效，不用改 `.env`、不用重启。
+
 
 ## 2. 一条命令启动
 
