@@ -1,0 +1,70 @@
+name: unified-inbox
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-unify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-unify}
+      POSTGRES_DB: ${POSTGRES_DB:-unify}
+      TZ: Asia/Shanghai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-unify} -d ${POSTGRES_DB:-unify}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    # 变量全部由同目录 .env 插值（compose 自动读取），没填就是空 -> 该平台显示"未就绪"，
+    # 不会导致启动失败，方便评委在没有凭证的机器上先看架构。
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-unify}:${POSTGRES_PASSWORD:-unify}@db:5432/${POSTGRES_DB:-unify}
+      REDIS_URL: redis://redis:6379/0
+      TZ: Asia/Shanghai
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      FEISHU_BASE_URL: ${FEISHU_BASE_URL:-https://open.feishu.cn}
+      DINGTALK_CLIENT_ID: ${DINGTALK_CLIENT_ID:-}
+      DINGTALK_CLIENT_SECRET: ${DINGTALK_CLIENT_SECRET:-}
+      DINGTALK_ROBOT_CODE: ${DINGTALK_ROBOT_CODE:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      OUTBOX_WORKERS: ${OUTBOX_WORKERS:-2}
+      OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-5}
+      SLA_MINUTES: ${SLA_MINUTES:-15}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

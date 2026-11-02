@@ -1,0 +1,23 @@
+{
+  "name": "unified-inbox-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 5173"
+  },
+  "dependencies": {
+    "ant-design-vue": "^4.2.6",
+    "dayjs": "^1.11.13",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.7"
+  },
+  "allowScripts": {
+    "esbuild": true
+  }
+}

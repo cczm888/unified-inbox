@@ -1,0 +1,21 @@
+# ---------------------------------------------------------------
+# 赛题 A 后端依赖。版本用下限约束，避免比赛服务器上 pip 解析失败。
+# 安装：pip install -r requirements.txt
+# ---------------------------------------------------------------
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.34
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30
+redis>=5.2
+httpx>=0.28
+pydantic>=2.10
+pydantic-settings>=2.7
+python-multipart>=0.0.20
+
+# 平台 SDK：飞书长连接、钉钉 Stream 模式（免公网回调）
+lark-oapi>=1.4
+dingtalk-stream>=0.20
+
+# 初赛"初步验证"需要的可复现单测
+pytest>=8.3
+pytest-asyncio>=0.25

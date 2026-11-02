@@ -1,0 +1,37 @@
+# 环境与密钥
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# 文档解压中间产物
+_docx_extract/
+
+# 本地开发数据库与运行产物
+*.db
+*.db-wal
+*.db-shm
+*.session
+web/.tmp/
+tmp/
