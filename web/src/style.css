@@ -101,7 +101,7 @@ body {
 .bubble {
   max-width: 68%;
   padding: 10px 14px;
-  border-radius: 14px;
+  border-radius: 12px;
   border-top-left-radius: 5px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -114,9 +114,11 @@ body {
 .bubble.out {
   margin-left: auto;
   background: var(--brand-weak);
-  border-color: var(--brand-line);
-  border-top-left-radius: 14px;
+  /* 自己发的气泡不要描边：高 DPI 下 0.8px 细边 + 阴影会渲染成一圈脏脏的重影 */
+  border-color: var(--brand-weak);
+  border-top-left-radius: 12px;
   border-top-right-radius: 5px;
+  box-shadow: none;
 }
 
 .meta { color: var(--t3); font-size: 12px; }

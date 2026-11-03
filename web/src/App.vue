@@ -1614,7 +1614,7 @@ onBeforeUnmount(() => {
   .main.reading .col-right { display: flex; min-height: 40vh; }
   .back-btn { display: inline-block; }
   .scroll { max-height: none; }
-  .bubble { max-width: 86%; }
+  .bubble { max-width: 74%; }
   .msg-area { padding: 14px 14px 20px; }
 }
 
