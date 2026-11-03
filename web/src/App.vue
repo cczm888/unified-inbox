@@ -24,6 +24,8 @@ const replyText = ref('')
 const aiText = ref('')
 const loading = ref(false)
 const sending = ref(false)
+const reflowOn = ref(false) // 改状态时是否给对方发回执（默认关，避免把「[统一收件箱] 已标记为…」刷进对话）
+const showEcho = ref(false) // 是否显示系统回执消息（默认关）
 const forwardKey = ref('')
 const keyword = ref('')
 
@@ -43,11 +45,20 @@ const pendingTotal = computed(() => threads.value.reduce((sum, t) => sum + Numbe
 const unreadTotal = computed(() => threads.value.reduce((sum, t) => sum + Number(t.unread || 0), 0))
 const urgentTotal = computed(() => threads.value.reduce((sum, t) => sum + Number(t.urgent || 0), 0))
 
+// 系统自动回执（「[统一收件箱] 该消息已标记为…」这类自己发出去的通知）默认不显示：
+// 它们是我自己的操作回声，混在对话里只会把真正的内容顶走。需要排查时可打开开关。
+const isSystemEcho = (m) =>
+  m.direction === 'out' && (m.text || '').trimStart().startsWith('[统一收件箱]')
+const echoCount = computed(() => messages.value.filter(isSystemEcho).length)
+const visibleMessages = computed(() =>
+  showEcho.value ? messages.value : messages.value.filter((m) => !isSystemEcho(m)),
+)
+
 // 把消息流按"今天 / 昨天 / 具体日期"分隔，长会话才看得清
 const timeline = computed(() => {
   const out = []
   let dayKey = ''
-  for (const m of messages.value) {
+  for (const m of visibleMessages.value) {
     const d = dayjs(m.created_at)
     const k = d.format('YYYY-MM-DD')
     if (k !== dayKey) {
@@ -584,9 +595,18 @@ async function makeTodo() {
 
 async function setStatus(status) {
   if (!selected.value) return
+  const send = reflowOn.value
   try {
-    await api.setStatus(selected.value.id, status, true)
-    notify(() => antMessage.success(`已标记为「${STATUS_LABEL[status]}」，并回写到原平台`), '已更新')
+    await api.setStatus(selected.value.id, status, send)
+    notify(
+      () =>
+        antMessage.success(
+          send
+            ? `已标记为「${STATUS_LABEL[status]}」，并把回执发给了对方`
+            : `已标记为「${STATUS_LABEL[status]}」`,
+        ),
+      '已更新',
+    )
     await loadMessages()
     await loadThreads()
     await loadStats()
@@ -734,7 +754,7 @@ async function doForward() {
 async function completeTodo(todo) {
   try {
     const res = await api.updateTodo(todo.id, 'done')
-    notify(() => antMessage.success(res.reflowed ? '已完成，状态已回流原平台' : '已完成'), '已完成')
+    notify(() => antMessage.success('已完成'), '已完成')
     await loadTodos()
     await loadMessages()
   } catch (e) {
@@ -1061,9 +1081,14 @@ onBeforeUnmount(() => {
               {{ PLATFORM_LABEL[activeThread.platform] }}
             </a-tag>
           </span>
+          <a-tooltip v-if="echoCount" title="我自己的操作回声（「[统一收件箱] 该消息已标记为…」这类），默认隐藏">
+            <a-checkbox v-model:checked="showEcho" class="echo-toggle">
+              系统回执 {{ echoCount }}
+            </a-checkbox>
+          </a-tooltip>
           <a-button size="small" :loading="loading" @click="loadMessages">刷新</a-button>
         </div>
-        <div v-if="activeThread && messages.length" class="bulk-toolbar">
+        <div v-if="activeThread && visibleMessages.length" class="bulk-toolbar">
           <a-checkbox :checked="allChecked" @change="checkAll">
             {{ allChecked ? '取消全选' : '全选' }}
           </a-checkbox>
@@ -1097,7 +1122,7 @@ onBeforeUnmount(() => {
         <div ref="msgArea" class="scroll flex-1 msg-area">
           <a-spin :spinning="loading" />
           <a-empty v-if="!activeThread" description="在左边选一个会话" />
-          <a-empty v-else-if="!messages.length" description="这个会话还没有消息" />
+          <a-empty v-else-if="!visibleMessages.length" description="这个会话还没有消息" />
           <template v-for="row in timeline" :key="row.key">
             <div v-if="row.kind === 'day'" class="day-sep">
               <span>{{ row.label }}</span>
@@ -1238,6 +1263,11 @@ onBeforeUnmount(() => {
                 <a-button size="small" @click="setStatus('closed')">关闭</a-button>
               </div>
 
+              <a-checkbox v-model:checked="reflowOn" class="reflow-check">
+                改状态时给对方发一条回执
+                <span class="reflow-hint">（默认不发，避免刷屏）</span>
+              </a-checkbox>
+
               <div class="divider">转发到其他会话</div>
               <div class="btn-row">
                 <a-select
@@ -1348,6 +1378,9 @@ onBeforeUnmount(() => {
 .panel { padding: 4px 2px; }
 .kv { font-size: 13px; color: #333; margin-bottom: 6px; }
 .btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.reflow-check { margin-top: 8px; font-size: 12px; color: #666; }
+.reflow-hint { color: #bbb; }
+.echo-toggle { font-size: 12px; color: #999; margin-left: auto; margin-right: 10px; }
 .ai-box {
   margin-top: 10px; padding: 8px 10px; background: #f6ffed;
   border: 1px solid #b7eb8f; border-radius: 6px; font-size: 13px; white-space: pre-wrap;

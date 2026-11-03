@@ -18,7 +18,9 @@ class TodoIn(BaseModel):
 
 class StatusIn(BaseModel):
     status: str = Field(pattern="^(received|claimed|replied|closed)$")
-    notify: bool = True  # 是否把状态变更回写到原会话（状态回流）
+    # 是否把状态变更回写到原会话。
+    # 默认 False：整理自己的处理进度不需要惊动对方；需要让对方知道进度时显式打开。
+    notify: bool = False
 
 
 class TodoStatusIn(BaseModel):

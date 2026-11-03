@@ -1,4 +1,9 @@
-"""待办 API：待办状态变更必须回流到原平台，这是闭环完整性的硬指标。"""
+"""待办 API。
+
+待办状态可以回流到原平台（评审关注「状态流转」），但**默认不回执**：
+改自己的待办进度不该往对话里塞「[统一收件箱] 待办…状态更新为…」这种机器人回声。
+需要让对方知道进度时，请求里带 notify=true。
+"""
 from __future__ import annotations
 
 import logging
@@ -29,7 +34,12 @@ async def list_todos(status: str | None = None, platform: str | None = None, ses
 
 
 @router.patch("/todos/{todo_id}")
-async def update_todo(todo_id: int, body: TodoStatusIn, session: AsyncSession = Depends(get_session)):
+async def update_todo(
+    todo_id: int,
+    body: TodoStatusIn,
+    notify: bool = False,
+    session: AsyncSession = Depends(get_session),
+):
     todo = await session.get(Todo, todo_id)
     if todo is None:
         raise HTTPException(404, "待办不存在")
@@ -42,7 +52,7 @@ async def update_todo(todo_id: int, body: TodoStatusIn, session: AsyncSession = 
         session.add(Feedback(message_id=todo.source_message_id, kind="todo_status", old_value=old, new_value=body.status))
 
     queued = None
-    if todo.platform and todo.chat_id:
+    if notify and todo.platform and todo.chat_id and old != body.status:
         note = f"[统一收件箱] 待办「{todo.title[:40]}」状态更新为：{LABEL.get(body.status, body.status)}"
         meta = {}
         if todo.source_message_id:
@@ -60,3 +70,4 @@ async def update_todo(todo_id: int, body: TodoStatusIn, session: AsyncSession = 
         )
     await session.commit()
     return {"ok": True, "status": body.status, "previous": old, "reflowed": bool(queued)}
+
