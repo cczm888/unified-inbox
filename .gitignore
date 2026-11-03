@@ -1,4 +1,4 @@
-# 环境与密钥
+﻿# 环境与密钥
 .env
 *.env
 !.env.example
@@ -35,3 +35,5 @@ _docx_extract/
 *.session
 web/.tmp/
 tmp/
+# 出站附件暂存（运行时产物，不入库）
+backend/uploads/
