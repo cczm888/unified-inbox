@@ -74,8 +74,25 @@ async def connect_platform(body: ConnectIn, session: AsyncSession = Depends(get_
 
 
 @router.delete("/platforms/{platform}/connect")
-async def disconnect_platform(platform: str, session: AsyncSession = Depends(get_session)):
-    return await platform_svc.disconnect(session, platform)
+async def disconnect_platform(
+    platform: str,
+    purge: bool = False,
+    session: AsyncSession = Depends(get_session),
+):
+    """停用平台。
+
+    默认软停用（保留加密凭证，之后可 /enable 重新拉起）；`?purge=true` 才是真删。
+    """
+    return await platform_svc.disconnect(session, platform, purge=purge)
+
+
+@router.post("/platforms/{platform}/enable")
+async def enable_platform(platform: str, session: AsyncSession = Depends(get_session)):
+    """重新启用之前停用的平台（凭证还在，不用重新填）。"""
+    result = await platform_svc.enable(session, platform)
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error") or "启用失败")
+    return result
 
 
 @router.post("/platforms/{platform}/test")

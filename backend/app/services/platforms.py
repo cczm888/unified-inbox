@@ -171,8 +171,14 @@ async def connect(
     }
 
 
-async def disconnect(session: AsyncSession, platform: str) -> dict:
-    """界面上移除某个平台：停适配器 + 删库记录。"""
+async def disconnect(session: AsyncSession, platform: str, *, purge: bool = False) -> dict:
+    """停用某个平台。
+
+    默认是**软停用**：只把 status 标成 disabled，凭证密文留在库里。
+    原因是之前这里是硬删除 —— 用户在界面上点一下「断开」，加密后的密钥就
+    跟着那一行一起没了，只能重新去平台后台拿一遍授权码，体验很差。
+    真要清干净，传 purge=True。
+    """
     adapter = registry.get(platform)
     if adapter is not None:
         try:
@@ -180,9 +186,71 @@ async def disconnect(session: AsyncSession, platform: str) -> dict:
         except Exception:
             log.warning("[%s] 停止适配器失败", platform)
         registry._items.pop(platform, None)
-    await session.execute(delete(PlatformAccount).where(PlatformAccount.platform == platform))
+
+    row = (
+        await session.execute(select(PlatformAccount).where(PlatformAccount.platform == platform))
+    ).scalars().first()
+
+    if purge:
+        await session.execute(delete(PlatformAccount).where(PlatformAccount.platform == platform))
+        await session.commit()
+        return {"ok": True, "platform": platform, "purged": True, "found": row is not None}
+
+    if row is None:
+        await session.commit()
+        return {"ok": True, "platform": platform, "purged": False, "found": False}
+
+    row.status = "disabled"
+    row.last_error = None
     await session.commit()
-    return {"ok": True, "platform": platform}
+    return {"ok": True, "platform": platform, "purged": False, "found": True}
+
+
+async def enable(session: AsyncSession, platform: str) -> dict:
+    """把之前停用的平台重新拉起来（凭证还在，不用重新填）。"""
+    if _on_inbound is None:
+        return {"ok": False, "platform": platform, "error": "服务未就绪"}
+    row = (
+        await session.execute(select(PlatformAccount).where(PlatformAccount.platform == platform))
+    ).scalars().first()
+    if row is None:
+        return {"ok": False, "platform": platform, "error": "没有这个平台的接入记录，请重新填写凭证"}
+    secret = crypto.decrypt(row.app_secret_enc or "")
+    if not secret:
+        return {"ok": False, "platform": platform, "error": "库里的凭证解不开（SECRET_KEY 变过？），请重新填写"}
+
+    adapter = build_adapter(row.platform, row.app_id or "", secret, row.extra or {}, _on_inbound)
+    if adapter is None:
+        return {"ok": False, "platform": platform, "error": "不支持的平台"}
+
+    old = registry.get(row.platform)
+    if old is not None:
+        try:
+            await old.stop()
+        except Exception:
+            pass
+        registry._items.pop(row.platform, None)
+
+    registry.register(adapter)
+    try:
+        await adapter.start()
+    except Exception as exc:
+        log.exception("[%s] 重新启用失败", platform)
+        row.status = "error"
+        row.last_error = str(exc)[:500]
+        await session.commit()
+        return {"ok": False, "platform": platform, "error": str(exc)}
+
+    if adapter.ready:
+        row.status = "active"
+        row.last_error = None
+        await session.commit()
+        return {"ok": True, "platform": platform, "ready": True, "error": None}
+
+    row.status = "error"
+    row.last_error = (adapter.last_error or "启动失败")[:500]
+    await session.commit()
+    return {"ok": False, "platform": platform, "error": adapter.last_error or "启动失败"}
 
 
 async def list_saved(session: AsyncSession) -> list[dict]:

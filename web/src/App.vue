@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message as antMessage } from 'ant-design-vue'
 import dayjs from 'dayjs'
@@ -254,12 +254,38 @@ async function loadAccounts() {
 async function removeSaved(s) {
   try {
     await api.disconnectPlatform(s.platform)
-    antMessage.success(`已断开${PLATFORM_LABEL[s.platform] || s.platform}`)
+    antMessage.success(`已停用${PLATFORM_LABEL[s.platform] || s.platform}（凭证保留，可随时重新启用）`)
     await loadAccounts()
     await loadPlatforms()
     await loadThreads()
   } catch (e) {
-    antMessage.error('断开失败：' + e.message)
+    antMessage.error('停用失败：' + e.message)
+  }
+}
+
+// 软停用之后重新拉起，凭证还在，不用重新填
+async function enableSaved(s) {
+  try {
+    await api.enablePlatform(s.platform)
+    antMessage.success(`${PLATFORM_LABEL[s.platform] || s.platform} 已重新启用`)
+    await loadAccounts()
+    await loadPlatforms()
+    await loadThreads()
+  } catch (e) {
+    antMessage.error('启用失败：' + e.message, 6)
+  }
+}
+
+// 真删（连凭证一起），给「确认要清干净」的人用
+async function purgeSaved(s) {
+  try {
+    await api.disconnectPlatform(s.platform, true)
+    antMessage.success(`已删除${PLATFORM_LABEL[s.platform] || s.platform}的接入记录（凭证已抹除）`)
+    await loadAccounts()
+    await loadPlatforms()
+    await loadThreads()
+  } catch (e) {
+    antMessage.error('删除失败：' + e.message)
   }
 }
 
@@ -1095,11 +1121,38 @@ onBeforeUnmount(() => {
         <div class="saved-row">
           <span class="st-pill plat-pill">{{ PLATFORM_LABEL[s.platform] || s.platform }}</span>
           <span class="saved-label" :title="s.label || s.app_id">{{ s.label || s.app_id }}</span>
-          <span class="saved-status" :class="s.status === 'active' ? 'is-ok' : 'is-bad'">
-            {{ s.status === 'active' ? '已连接' : '异常' }}
+          <span
+            class="saved-status"
+            :class="
+              s.status === 'active' ? 'is-ok' : s.status === 'disabled' ? 'is-idle' : 'is-bad'
+            "
+          >
+            {{ s.status === 'active' ? '已连接' : s.status === 'disabled' ? '已停用' : '异常' }}
           </span>
-          <a-popconfirm title="断开这个平台？库里的凭证会一起删掉" @confirm="removeSaved(s)">
-            <a-button size="small" type="text" danger>断开</a-button>
+          <a-button
+            v-if="s.status !== 'active'"
+            size="small"
+            type="link"
+            @click="enableSaved(s)"
+          >
+            重新启用
+          </a-button>
+          <a-popconfirm
+            v-else
+            title="停用这个平台？消息不再进来，但凭证会留着，随时可以重新启用"
+            ok-text="停用"
+            cancel-text="算了"
+            @confirm="removeSaved(s)"
+          >
+            <a-button size="small" type="text">停用</a-button>
+          </a-popconfirm>
+          <a-popconfirm
+            title="彻底删除？加密凭证会一起抹掉，下次要重新去平台后台拿授权码"
+            ok-text="删除"
+            cancel-text="算了"
+            @confirm="purgeSaved(s)"
+          >
+            <a-button size="small" type="text" danger>删除</a-button>
           </a-popconfirm>
         </div>
       </div>
@@ -1922,6 +1975,7 @@ onBeforeUnmount(() => {
 }
 .saved-status { font-size: 12px; flex: none; }
 .saved-status.is-ok { color: var(--green); }
+.saved-status.is-idle { color: var(--t3); }
 .saved-status.is-bad { color: var(--red); }
 .quote-bar {
   display: flex;

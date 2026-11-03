@@ -33,8 +33,13 @@ export const api = {
   connectPlatform: (body) =>
     request('/api/v1/platforms/connect', { method: 'POST', body: JSON.stringify(body) }),
   savedPlatforms: () => request('/api/v1/platforms/saved'),
-  disconnectPlatform: (platform) =>
-    request(`/api/v1/platforms/${platform}/connect`, { method: 'DELETE' }),
+  // 默认软停用（保留凭证，之后能一键重新启用）；purge=true 才是真删
+  disconnectPlatform: (platform, purge = false) =>
+    request(`/api/v1/platforms/${platform}/connect${purge ? '?purge=true' : ''}`, {
+      method: 'DELETE',
+    }),
+  enablePlatform: (platform) =>
+    request(`/api/v1/platforms/${platform}/enable`, { method: 'POST' }),
   threads: (params) => request('/api/v1/inbox/threads' + qs(params)),
   messages: (params) => request('/api/v1/inbox' + qs(params)),
   // quoteId：引用回复时传被引用消息的 id，后端会把它拼成引用块带到对方平台
