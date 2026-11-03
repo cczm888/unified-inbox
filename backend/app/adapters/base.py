@@ -107,6 +107,7 @@ class BaseAdapter(abc.ABC):
             log.exception("[%s] adapter start failed: %s", self.platform, self.last_error)
 
     async def stop(self) -> None:
+        self.ready = False  # 先摘牌：停止过程中不该再被当成可用
         try:
             await self._stop()
         except Exception:
@@ -140,12 +141,32 @@ class BaseAdapter(abc.ABC):
     def to_unified(self, raw: dict) -> UnifiedMessage | None:
         """原始事件 -> 统一消息；返回 None 表示忽略（非消息事件、机器人自己发的等）。"""
 
-    def _emit(self, raw: dict) -> None:
-        """从 SDK 的线程/回调里把事件安全地丢回主事件循环。"""
+    def _emit(self, raw: dict, timeout: float = 20.0) -> bool:
+        """从 SDK 的线程/回调里把事件丢回主事件循环，**并等待入库完成**。
+
+        返回值让调用方决定「能不能向平台确认这条消息」——这是可靠性的关键。
+
+        为什么必须等：平台侧的确认不可撤销。
+          · Telegram offset 一前移，这条 update 再也不出现在 getUpdates 里；
+          · 钉钉返回 ACK 之后不会重推；
+          · 邮箱标了 \\Seen 就不在 UNSEEN 里了。
+        先确认后入库，中间崩一次就是永久丢消息。宁可超时让平台重推
+        （会重复，但入库有 platform+platform_msg_id 唯一约束去重），也不能丢。
+
+        注意：只能在**非主事件循环的线程**里调用（SDK 回调线程）。
+        在主循环里调会死锁 —— 那边直接用 await self._on_inbound(...)。
+        """
         if self._loop is None or self._loop.is_closed():
             log.warning("[%s] loop not ready, drop event", self.platform)
-            return
-        asyncio.run_coroutine_threadsafe(self._on_inbound(self.platform, raw), self._loop)
+            return False
+        try:
+            fut = asyncio.run_coroutine_threadsafe(self._on_inbound(self.platform, raw), self._loop)
+            fut.result(timeout=timeout)
+            return True
+        except Exception as exc:
+            log.exception("[%s] 入库失败，不向平台确认（等它重推）: %s", self.platform, exc)
+            return False
+
 
     # ---------- 出站 ----------
     @abc.abstractmethod

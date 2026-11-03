@@ -140,13 +140,13 @@ npm install && npm run dev        # http://localhost:5173，已配好 /api 代�
 ## 8. 已验证状态（可复现）
 
 ```bash
-cd backend && python -m pytest -q      # 17 passed
+cd backend && python -m pytest -q      # 26 passed
 cd web && npm run build                # vite build 成功，dist/ 产出
 ```
 
-- 17 条单测覆盖：三平台格式转换、三平台字段集合一致性、AI 摘要/草稿降级、Redis 挂掉时限流降级放行、出站 payload 结构；
+- 26 条单测：`test_convert.py` 8（三平台转换 + 自回环丢弃）、`test_mail.py` 9（邮件解析/HTML 转文本/附件 part 编号/**四平台字段集合一致性**）、`test_services.py` 9（outbox payload、时间戳、优先级规则、LLM 与限流降级）；
 - 前端 `vite build` 3162 modules 转换成功；
-- `/healthz` 与 17 个 API 路由由 `app.openapi()` 实测确认。
+- `app.openapi()` 实测 **38 条路由** + `/healthz`。
 
 ### 8.1 飞书真机联调记录（2026-11-02 实测通过）
 

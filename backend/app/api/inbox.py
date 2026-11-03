@@ -419,11 +419,14 @@ async def reply_to_message(
         payload=payload,
         parent_message_id=msg.id,
     )
-    msg.status = "replied"
+    # 这里只标「处理中」，不是「已回复」：此刻消息只是排进 Outbox 队列，
+    # 还没真的发出去。真正的 replied 由 outbox 在平台确认收到（拿到 message_id）后回写，
+    # 重试耗尽进 dead 时则退回 received。否则队列失败但界面显示"已回复"，闭环是假的。
+    msg.status = "claimed"
     await session.commit()
 
     log.info("消息 %s 回复入队 outbox=%s 平台=%s", message_id, outbox_id, msg.platform)
-    return {"ok": True, "outbox_id": outbox_id, "platform": msg.platform, "status": "replied"}
+    return {"ok": True, "outbox_id": outbox_id, "platform": msg.platform, "status": "claimed"}
 
 
 # 上传目录：统一入口发出去的文件先落这里，再由 outbox 交给对应平台适配器
@@ -470,7 +473,8 @@ async def reply_with_file(
         payload=payload,
         parent_message_id=msg.id,
     )
-    msg.status = "replied"
+    # 同 reply：入队只是"安排好了"，不是"发出去了"，replied 交给 outbox 回写
+    msg.status = "claimed"
     await session.commit()
 
     log.info(

@@ -18,6 +18,8 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..adapters import registry
 from ..config import settings
@@ -199,20 +201,37 @@ async def _mark_sent(row: dict, platform_msg_id: str | None) -> None:
                 # 记一份 attachments：这样自己发出的文件在网页里也是一个可预览/下载的卡片，
                 # 和对方发来的文件长得一样（原来只有一行 "[文件] xxx" 的纯文本）。
                 attachments = [{"kind": "file", "name": name, "size": size, "path": path}]
-            session.add(
-                Message(
-                    platform=row["platform"],
-                    # 有平台真实消息 ID 就用它：拉历史时飞书返回的是 om_xxx，
-                    # 如果这里存 outbox:N，去重键对不上，同一条消息会被回填成两条。
-                    platform_msg_id=platform_msg_id or f"outbox:{row['id']}",
-                    chat_id=row["target_chat"],
-                    msg_type="file" if payload.get("kind") == "file" else "text",
-                    text_body="" if attachments else (body or ""),
-                    attachments=attachments or None,
-                    direction="out",
-                    status="sent",
-                    raw={"outbox_id": row["id"]},
+            mid = platform_msg_id or f"outbox:{row['id']}"
+            # 冲突安全写入：这条平台消息可能已经被「拉历史」或实时事件先落库了。
+            # 直接 session.add + commit 会撞 (platform, platform_msg_id) 唯一约束，
+            # 整个事务回滚 —— 连上面的 outbox 状态一起丢掉，任务会被反复重发。
+            dialect = session.get_bind().dialect.name
+            values = {
+                "platform": row["platform"],
+                # 有平台真实消息 ID 就用它：拉历史时飞书返回的是 om_xxx，
+                # 如果这里存 outbox:N，去重键对不上，同一条消息会被回填成两条。
+                "platform_msg_id": mid,
+                "chat_id": row["target_chat"],
+                "msg_type": "file" if payload.get("kind") == "file" else "text",
+                "text_body": "" if attachments else (body or ""),
+                "attachments": attachments or None,
+                "direction": "out",
+                "status": "sent",
+                "created_at": datetime.now(timezone.utc),
+                "raw": {"outbox_id": row["id"]},
+            }
+            ins = sqlite_insert(Message) if dialect == "sqlite" else pg_insert(Message)
+            await session.execute(
+                ins.values(**values).on_conflict_do_nothing(
+                    index_elements=["platform", "platform_msg_id"]
                 )
+            )
+        # 平台确认收到之后，才把被回复的原消息标成「已回复」。
+        # 入队时只标 claimed —— 队列失败时状态会退回 received，不会假装已回复。
+        if row.get("parent_message_id"):
+            await session.execute(
+                text("UPDATE message SET status='replied' WHERE id=:pid AND direction='in'"),
+                {"pid": row["parent_message_id"]},
             )
         await session.commit()
     log.info("outbox id=%s 发送成功 msg_id=%s", row["id"], platform_msg_id)
@@ -241,6 +260,16 @@ async def _mark_failed(row: dict, error: str) -> None:
                 text("UPDATE outbox SET status='dead', last_error=:err WHERE id=:id"),
                 {"id": row["id"], "err": (error or "")[:2000]},
             )
+            # 彻底发不出去了：把原消息从「处理中」退回「待处理」，
+            # 否则界面会一直显示"已安排回复"，而实际上永远发不出去。
+            if row.get("parent_message_id"):
+                await session.execute(
+                    text(
+                        "UPDATE message SET status='received' "
+                        "WHERE id=:pid AND direction='in' AND status='claimed'"
+                    ),
+                    {"pid": row["parent_message_id"]},
+                )
             await session.commit()
         log.error("outbox id=%s 超过最大重试次数，置为 dead: %s", row["id"], error)
         return

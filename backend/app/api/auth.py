@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import html
 import logging
 import secrets
 
@@ -110,9 +111,17 @@ async def feishu_callback(
     session: AsyncSession = Depends(get_session),
 ):
     """飞书授权后回调到这里：换 token、拉用户信息、落库。"""
-    if state and _states and state not in _states:
-        log.warning("OAuth state 不匹配，可能是跨站伪造请求: %s", state)
-    _states.discard(state or "")
+    # state 是防 CSRF 的唯一凭据：不校验的话，别人构造一个带自己 code 的回调链接
+    # 就能把「他的账号」绑进你的系统（或者反过来把你的授权码骗走）。
+    # 只记日志不拒绝，等于没做。
+    if state:
+        if state not in _states:
+            log.warning("OAuth state 不匹配，拒绝回调: %s", state)
+            return HTMLResponse(
+                _page("授权被拒绝", "state 校验失败（可能过期或非本站发起），请重新点一次授权。"),
+                status_code=400,
+            )
+        _states.discard(state)
 
     async with httpx.AsyncClient(timeout=20) as cli:
         r = await cli.post(
@@ -155,12 +164,18 @@ async def feishu_callback(
         scope=data.get("scope"),
     )
     log.info("用户身份接入成功: %s(%s) account_id=%s", acc.user_name, acc.user_id, acc.id)
+    # 用户名来自平台，是外部输入，必须转义后再拼进 HTML —— 否则昵称里带
+    # <script> 就能在授权成功页执行（存储型 XSS 的入口在这里）。
+    name_safe = html.escape(acc.user_name or acc.user_id or "")
+    plat_safe = html.escape(acc.platform or "")
+    # 返回地址不能硬编码 5173：换端口/换机器/走隧道时这个链接就废了。
+    back = settings.feishu_redirect_uri.rsplit("/api/", 1)[0] if settings.feishu_redirect_uri else ""
+    back_link = f'<a href="{html.escape(back)}">{html.escape(back)}</a>' if back else ""
     return HTMLResponse(
         _page(
             "授权成功",
-            f"已接入 <b>{acc.user_name or acc.user_id}</b>（{acc.platform}）。"
-            f"<br>现在可以回统一收件箱，点「同步我的会话」。<br>"
-            f"<a href=\"http://127.0.0.1:5173\">返回统一收件箱</a>",
+            f"已接入 <b>{name_safe}</b>（{plat_safe}）。"
+            f"<br>现在可以回统一收件箱，点「同步我的会话」。<br>{back_link}",
         )
     )
 

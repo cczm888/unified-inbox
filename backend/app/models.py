@@ -129,7 +129,7 @@ class Message(Base):
     # 消息归属于哪个"人"的账号：应用身份接入时为 NULL，用户身份接入时填账号 id。
     # 加上这一维之后，"我的产品群"和"你的产品群"才是两个不同会话。
     account_id: Mapped[int | None] = mapped_column(
-        FK_BIGINT, ForeignKey("user_account.id", ondelete="CASCADE"), index=True
+        FK_BIGINT, ForeignKey("user_account.id", ondelete="SET NULL"), index=True
     )
     platform: Mapped[str] = mapped_column(String(32), nullable=False)
     platform_msg_id: Mapped[str] = mapped_column(String(128), nullable=False)

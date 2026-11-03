@@ -236,8 +236,14 @@ class MailAdapter(BaseAdapter):
                 for raw in rows:
                     if raw["message_id"] in self._seen_uids:
                         continue
+                    try:
+                        await self._on_inbound(self.platform, raw)
+                    except Exception as exc:
+                        # 入库失败：不标已读，下一轮还会拉到它（入库有唯一约束去重）
+                        log.warning("[email] 入库失败，保留未读等重试 uid=%s: %s", raw.get("message_id"), exc)
+                        continue
                     self._seen_uids.add(raw["message_id"])
-                    await self._on_inbound(self.platform, raw)
+                    await asyncio.to_thread(self._mark_seen, raw.get("message_id", ""))
                 if rows:
                     log.info("[email] 收到 %d 封新邮件", len(rows))
             except asyncio.CancelledError:
@@ -248,17 +254,25 @@ class MailAdapter(BaseAdapter):
             await asyncio.sleep(self.poll_seconds)
 
     def _fetch_unseen(self, limit: int) -> list[dict]:
+        """拉未读邮件，返回解析结果。这里**只读不写**：不标 \\Seen。
+
+        标已读交给 `_mark_seen()`，由 _poll_loop 在入库成功之后再调用。
+        顺序错了会丢邮件：先标 \\Seen 再入库，入库一失败，这封邮件
+        就永远不在 UNSEEN 里了，而且没有任何重试机会。
+        """
         out: list[dict] = []
         with imaplib.IMAP4_SSL(self.imap_host, self.imap_port) as cli:
             cli.login(self.address, self.password)
             cli.select("INBOX")
-            typ, data = cli.search(None, "UNSEEN")
+            # 必须用 UID 命令：search 返回的是序号（sequence number），
+            # 邮件被删除/移动后序号会重排，下次重连按旧序号 fetch 会取错邮件。
+            typ, data = cli.uid("search", None, "UNSEEN")
             if typ != "OK" or not data or not data[0]:
                 return out
             uids = data[0].split()[-limit:]
             for uid in uids:
                 u = uid.decode()
-                typ, parts = cli.fetch(uid, "(RFC822)")
+                typ, parts = cli.uid("fetch", uid, "(RFC822)")
                 if typ != "OK":
                     continue
                 raw_bytes = None
@@ -269,12 +283,18 @@ class MailAdapter(BaseAdapter):
                 if not raw_bytes:
                     continue
                 out.append(_parse_mail(raw_bytes, u))
-                if self.mark_seen:
-                    try:
-                        cli.store(uid, "+FLAGS", "\\Seen")
-                    except Exception:
-                        pass
         return out
+
+    def _mark_seen(self, uid: str) -> None:
+        if not self.mark_seen or not uid:
+            return
+        try:
+            with imaplib.IMAP4_SSL(self.imap_host, self.imap_port) as cli:
+                cli.login(self.address, self.password)
+                cli.select("INBOX")
+                cli.uid("store", uid, "+FLAGS", "\\Seen")
+        except Exception as exc:
+            log.warning("[email] 标已读失败 uid=%s: %s", uid, exc)
 
     def to_unified(self, raw: dict) -> UnifiedMessage | None:
         if not raw.get("from_addr"):

@@ -32,6 +32,10 @@ DING_BASE = "https://api.dingtalk.com"
 class DingTalkAdapter(BaseAdapter):
     platform = "dingtalk"
     display_name = "钉钉"
+    # 文件发送还没接 media/upload —— 目前 send_file 只发一条带文件名的文字。
+    # 标成 True 会让界面显示「支持发文件」，用户选了文件以为发出去了，
+    # 实际对方只收到一行字。宁可在界面上明说暂不支持。
+    supports_file = False
     rpm = 20  # 机器人单聊限流约 20 条/分钟，令牌桶按这个配
 
     def __init__(
@@ -58,11 +62,16 @@ class DingTalkAdapter(BaseAdapter):
 
         class _Handler(ChatbotHandler):
             async def process(self, callback):  # type: ignore[override]
+                # _emit 现在会等入库完成再返回。入库失败就不 ACK，
+                # 让钉钉按它自己的重试策略再推一次（入库层有唯一约束去重）。
+                # 「尽快 ACK」换来的是丢消息，不划算。
                 try:
-                    outer._emit(dict(callback.data))
-                except Exception:
-                    log.exception("dingtalk emit failed")
-                # 必须尽快 ACK，否则钉钉会重推
+                    ok = outer._emit(dict(callback.data))
+                except Exception as exc:
+                    log.exception("dingtalk emit failed: %s", exc)
+                    ok = False
+                if not ok:
+                    return AckMessage.STATUS_SYS_ERR, "persist failed"
                 return AckMessage.STATUS_OK, "OK"
 
         client = DingTalkStreamClient(Credential(self.client_id, self.client_secret))

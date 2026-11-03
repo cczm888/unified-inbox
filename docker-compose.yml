@@ -49,11 +49,25 @@ services:
       OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-5}
       SLA_MINUTES: ${SLA_MINUTES:-15}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # ---- 安全配置：这几项漏传会有实际后果，不是可选装饰 ----
+      # ACCESS_PASSWORD 不传 = 谁连上 8080 都能看消息、能代发。
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
+      ACCESS_COOKIE_DAYS: ${ACCESS_COOKIE_DAYS:-30}
+      # SECRET_KEY 用于派生 token 加密密钥（Fernet）和登录 cookie 签名。
+      # 不传就用代码里的默认值 —— 那等于把加密密钥公开写在仓库里，密文形同明码。
+      SECRET_KEY: ${SECRET_KEY:-dev-only-change-me-in-env}
+      # OAuth 回调地址必须和飞书后台登记的完全一致，硬编码 127.0.0.1 在容器里跑不通。
+      FEISHU_REDIRECT_URI: ${FEISHU_REDIRECT_URI:-http://127.0.0.1:8000/api/v1/auth/feishu/callback}
+      FEISHU_USER_SCOPES: ${FEISHU_USER_SCOPES:-im:message:readonly im:chat:readonly}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      # 出站附件暂存在这里。不挂卷的话：文件进了 Outbox 队列 → 容器重启 →
+      # 数据库里还有待发任务，磁盘上文件没了 → 永远发不出去。
+      - uploads:/srv/uploads
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -68,3 +82,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

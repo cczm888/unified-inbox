@@ -64,10 +64,16 @@ class TelegramAdapter(BaseAdapter):
                 if not data.get("ok"):
                     raise RuntimeError(str(data))
                 for update in data.get("result") or []:
-                    self._offset = int(update["update_id"]) + 1
                     msg = update.get("message") or update.get("edited_message")
                     if msg:
-                        self._emit(msg)
+                        # 先入库、再前移 offset：入库失败就跳出本轮，offset 不动，
+                        # 这条 update 会在下一次 getUpdates 里重来（入库有唯一约束去重）。
+                        try:
+                            await self._on_inbound(self.platform, msg)
+                        except Exception as exc:
+                            log.warning("telegram 入库失败，保留 offset 等重推: %s", exc)
+                            raise
+                    self._offset = int(update["update_id"]) + 1
                 backoff = 1
             except asyncio.CancelledError:
                 raise
