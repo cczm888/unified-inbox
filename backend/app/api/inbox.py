@@ -5,10 +5,13 @@ import asyncio
 import io
 import json
 import logging
+import pathlib
+import re
+import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -353,6 +356,67 @@ async def reply_to_message(
 
     log.info("消息 %s 回复入队 outbox=%s 平台=%s", message_id, outbox_id, msg.platform)
     return {"ok": True, "outbox_id": outbox_id, "platform": msg.platform, "status": "replied"}
+
+
+# 上传目录：统一入口发出去的文件先落这里，再由 outbox 交给对应平台适配器
+UPLOAD_DIR = pathlib.Path(__file__).resolve().parents[2] / "uploads"
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20MB，飞书/TG 单文件上限的保守值
+
+
+def _safe_name(name: str) -> str:
+    """只保留文件名本体，去掉路径分隔符和危险字符。"""
+    base = pathlib.Path(name or "file").name
+    base = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", base).strip(". ") or "file"
+    return base[:120]
+
+
+@router.post("/inbox/{message_id}/reply-file")
+async def reply_with_file(
+    message_id: int,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """从统一入口向原会话发送文件（赛题要求的「发文本与文件」里的文件那半边）。"""
+    msg = await session.get(Message, message_id)
+    if msg is None:
+        raise HTTPException(404, "消息不存在")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "文件是空的")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(400, f"文件超过 {MAX_UPLOAD_BYTES // 1024 // 1024}MB，请压缩后再发")
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    name = _safe_name(file.filename or "file")
+    # 加随机前缀避免同名覆盖，但保留原文件名，因为各平台发送时用的就是 basename
+    dest = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{name}"
+    dest.write_bytes(data)
+
+    meta = extract_meta(msg)
+    payload = outbox.payload_file(str(dest), meta)
+    outbox_id = await outbox.enqueue(
+        session,
+        platform=msg.platform,
+        target_chat=msg.chat_id,
+        payload=payload,
+        parent_message_id=msg.id,
+    )
+    msg.status = "replied"
+    await session.commit()
+
+    log.info(
+        "消息 %s 发送文件入队 outbox=%s 平台=%s 文件=%s (%d 字节)",
+        message_id, outbox_id, msg.platform, name, len(data),
+    )
+    return {
+        "ok": True,
+        "outbox_id": outbox_id,
+        "platform": msg.platform,
+        "status": "replied",
+        "filename": name,
+        "size": len(data),
+    }
 
 
 @router.post("/inbox/{message_id}/todo")

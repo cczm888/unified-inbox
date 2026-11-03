@@ -12,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
+import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
@@ -181,14 +183,20 @@ async def _mark_sent(row: dict, platform_msg_id: str | None) -> None:
         # 出站消息也落一份，形成完整会话流（收件箱里能看到"我回了什么"）
         payload = row["payload"] or {}
         if payload.get("kind") in ("text", "status", "file"):
-            body = payload.get("text") or f"[文件] {payload.get('path')}"
+            body = payload.get("text")
+            if not body and payload.get("kind") == "file":
+                # 只显示文件名：路径是服务器内部细节，不该出现在对话里
+                name = os.path.basename(payload.get("path") or "") or "文件"
+                # 去掉上传时加的 8 位随机前缀
+                name = re.sub(r"^[0-9a-f]{8}_", "", name)
+                body = f"[文件] {name}"
             session.add(
                 Message(
                     platform=row["platform"],
                     platform_msg_id=f"outbox:{row['id']}",
                     chat_id=row["target_chat"],
                     msg_type="file" if payload.get("kind") == "file" else "text",
-                    text_body=body,
+                    text_body=body or "",
                     direction="out",
                     status="sent",
                     raw={"outbox_id": row["id"]},

@@ -39,6 +39,21 @@ export const api = {
   messages: (params) => request('/api/v1/inbox' + qs(params)),
   reply: (id, text) =>
     request(`/api/v1/inbox/${id}/reply`, { method: 'POST', body: JSON.stringify({ text }) }),
+  // 从统一入口给对方发文件（multipart，不能用 request 的 JSON 头）
+  replyFile: async (id, file) => {
+    const fd = new FormData()
+    fd.append('file', file, file.name)
+    const resp = await fetch(`${BASE}/api/v1/inbox/${id}/reply-file`, { method: 'POST', body: fd })
+    if (!resp.ok) {
+      let detail = resp.statusText
+      try {
+        const body = await resp.json()
+        detail = body.detail || JSON.stringify(body)
+      } catch (_) { /* 忽略非 JSON */ }
+      throw new Error(detail)
+    }
+    return resp.json()
+  },
   // 人工改紧急程度（覆盖 AI 判断）
   setPriority: (id, priority) =>
     request(`/api/v1/inbox/${id}/priority`, {

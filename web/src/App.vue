@@ -24,6 +24,7 @@ const replyText = ref('')
 const aiText = ref('')
 const loading = ref(false)
 const sending = ref(false)
+const sendingFile = ref(false)
 const reflowOn = ref(false) // 改状态时是否给对方发回执（默认关，避免把「[统一收件箱] 已标记为…」刷进对话）
 const showEcho = ref(false) // 是否显示系统回执消息（默认关）
 const forwardKey = ref('')
@@ -751,6 +752,26 @@ async function doForward() {
   }
 }
 
+// 从统一入口给对方发文件（赛题要求：能向指定平台发文本与文件）
+async function doSendFile(file) {
+  if (!selected.value) return false
+  if (file.size > 20 * 1024 * 1024) {
+    antMessage.error('文件超过 20MB，请压缩后再发')
+    return false
+  }
+  sendingFile.value = true
+  try {
+    const res = await api.replyFile(selected.value.id, file)
+    antMessage.success(`已把「${res.filename}」发给对方`)
+    await Promise.all([loadMessages(), loadThreads(), loadStats()])
+  } catch (e) {
+    antMessage.error('发文件失败：' + e.message)
+  } finally {
+    sendingFile.value = false
+  }
+  return false // 阻止 a-upload 自己上传
+}
+
 async function completeTodo(todo) {
   try {
     const res = await api.updateTodo(todo.id, 'done')
@@ -1259,6 +1280,9 @@ onBeforeUnmount(() => {
               />
               <div class="btn-row">
                 <a-button type="primary" size="small" :loading="sending" @click="sendReply">发送回复</a-button>
+                <a-upload :before-upload="doSendFile" :show-upload-list="false">
+                  <a-button size="small" :loading="sendingFile">📎 发文件</a-button>
+                </a-upload>
                 <a-button size="small" @click="setStatus('claimed')">标记处理中</a-button>
                 <a-button size="small" @click="setStatus('closed')">关闭</a-button>
               </div>
