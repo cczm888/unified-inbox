@@ -1,4 +1,4 @@
-# 本地一键启动（Windows，不需要 Docker）
+﻿# 本地一键启动（Windows，不需要 Docker）
 # 用法：右键 -> 使用 PowerShell 运行，或在 PowerShell 里执行 .\scripts\dev-up.ps1
 # 前提：backend\.venv 已建好并装完依赖，web\node_modules 已装好
 
@@ -23,7 +23,7 @@ $backendArgs = @(
     "-NoExit", "-Command",
     "`$env:DATABASE_URL='sqlite+aiosqlite:///./local.db'; Set-Location '$root\backend'; & '$py' -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
 )
-Start-Process pwsh -ArgumentList $backendArgs -WindowStyle Minimized
+Start-Process powershell -ArgumentList $backendArgs -WindowStyle Minimized
 
 # 等后端起来（最多 40 秒）
 $ok = $false
@@ -49,7 +49,7 @@ $frontArgs = @(
     "Remove-Item Env:npm_config_allow_scripts -ErrorAction SilentlyContinue; Set-Location '$root\web'; `$env:TEMP='$root\web\.tmp'; `$env:TMP=`$env:TEMP; npm run dev -- --host 127.0.0.1 --port 5173"
 )
 New-Item -ItemType Directory -Force -Path (Join-Path $root "web\.tmp") | Out-Null
-Start-Process pwsh -ArgumentList $frontArgs -WindowStyle Minimized
+Start-Process powershell -ArgumentList $frontArgs -WindowStyle Minimized
 
 $feOk = $false
 for ($i = 0; $i -lt 40; $i++) {
