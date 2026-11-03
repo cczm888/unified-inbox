@@ -63,6 +63,43 @@ async def _log_event(session, platform: str, event_type: str, raw: dict) -> None
     session.add(EventLog(platform=platform, event_type=event_type, raw=raw or {}))
 
 
+async def backfill(platform: str, chat_id: str, limit: int = 50) -> dict:
+    """拉会话历史并入库。
+
+    实时事件只能收到「订阅之后」的消息，接入之前的老对话是空的。
+    这里用各平台的历史接口补一次，走的是和实时事件完全相同的入库管道
+    （同样的幂等去重、同样的字段映射），所以回填完看不出差别。
+    """
+    adapter = registry.get(platform)
+    if adapter is None:
+        return {"ok": False, "error": f"平台 {platform} 当前未接入", "fetched": 0, "inserted": 0}
+
+    items = await adapter.fetch_history(chat_id, limit=limit)
+    if not items:
+        return {"ok": True, "fetched": 0, "inserted": 0, "note": "该平台不支持拉历史，或这个会话里没有消息"}
+
+    inserted = 0
+    async with SessionLocal() as session:
+        inserter = sqlite_insert if session.get_bind().dialect.name == "sqlite" else pg_insert
+        for unified in items:
+            try:
+                await adapter.resolve_sender(unified)
+            except Exception:
+                log.warning("[%s] 回填时解析发送者失败", platform, exc_info=True)
+            stmt = (
+                inserter(Message)
+                .values(**unified.as_row())
+                .on_conflict_do_nothing(index_elements=["platform", "platform_msg_id"])
+                .returning(Message.id)
+            )
+            if (await session.execute(stmt)).scalar_one_or_none() is not None:
+                inserted += 1
+        await session.commit()
+
+    log.info("[%s] 回填 chat=%s 拉到 %s 条，新增 %s 条", platform, chat_id, len(items), inserted)
+    return {"ok": True, "fetched": len(items), "inserted": inserted}
+
+
 async def list_since(since: datetime, limit: int = 200) -> list[dict]:
     """给 SSE 用：拉取某时间点之后的新消息（轮询式实时推送，够用且不会出错）。"""
     async with SessionLocal() as session:

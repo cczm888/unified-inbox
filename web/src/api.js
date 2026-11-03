@@ -107,6 +107,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ ids, priority }),
     }),
+  backfill: (platform, chat_id, limit = 50) =>
+    request(`/api/v1/inbox/backfill${qs({ platform, chat_id, limit })}`, { method: 'POST' }),
   summarize: (id) => request(`/api/v1/inbox/${id}/summarize`, { method: 'POST' }),
   draft: (id) => request(`/api/v1/inbox/${id}/draft`, { method: 'POST' }),
   forward: (id, target_platform, target_chat) =>

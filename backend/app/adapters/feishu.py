@@ -18,6 +18,7 @@ import json
 import logging
 import threading
 import time
+from typing import Any
 
 import httpx
 
@@ -26,6 +27,39 @@ from .base import AttachmentBlob, BaseAdapter, InboundCallback, SendResult, Unif
 log = logging.getLogger(__name__)
 
 FEISHU_BASE = "https://open.feishu.cn/open-apis"
+
+
+def _post_to_text(content: dict) -> str:
+    """飞书富文本（post）压成纯文本。
+
+    结构：{"title": "...", "content": [[{"tag": "text", "text": "..."}, {"tag": "a", ...}], ...]}
+    外层是段落数组，内层是行内节点数组。只取 text / a 两种节点的文字，
+    其余（图片、@人等）用占位符，避免整段消失。
+    """
+    lines: list[str] = []
+    title = (content.get("title") or "").strip()
+    if title:
+        lines.append(title)
+    for para in content.get("content") or []:
+        if not isinstance(para, list):
+            continue
+        buf: list[str] = []
+        for node in para:
+            if not isinstance(node, dict):
+                continue
+            tag = node.get("tag")
+            if tag in ("text", "a"):
+                buf.append(node.get("text") or "")
+            elif tag == "at":
+                buf.append(f"@{node.get('user_name') or node.get('user_id') or ''}")
+            elif tag == "img":
+                buf.append("[图片]")
+            elif tag == "media":
+                buf.append("[视频]")
+        line = "".join(buf).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
 
 
 class FeishuAdapter(BaseAdapter):
@@ -180,6 +214,110 @@ class FeishuAdapter(BaseAdapter):
             thread_root=msg.get("parent_id") or msg.get("root_id"),
             created_at=ms_to_dt(msg.get("create_time") or header.get("create_time")),
             raw=raw,
+        )
+
+    # ---------------- 历史回填 ----------------
+    async def fetch_history(self, chat_id: str, limit: int = 50) -> list[UnifiedMessage]:
+        """拉这个会话的历史消息（应用身份，机器人必须在会话里）。
+
+        实时事件只覆盖「订阅那一刻之后」的消息。飞书对应用身份开放了整个会话的
+        历史读取，所以进群之前、接机器人之前的老消息也能补回来 —— 这是「官方 API
+        能做到什么程度」的关键：范围由机器人参与了哪些会话决定，不由身份决定。
+        """
+        token = await self._access_token()
+        out: list[UnifiedMessage] = []
+        page_token = ""
+        while len(out) < limit:
+            params: dict[str, Any] = {
+                "container_id_type": "chat",
+                "container_id": chat_id,
+                "sort_type": "ByCreateTimeDesc",
+                "page_size": min(50, limit - len(out)),
+            }
+            if page_token:
+                params["page_token"] = page_token
+            resp = await self._http.get(
+                f"{FEISHU_BASE}/im/v1/messages",
+                params=params,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            data = resp.json()
+            if data.get("code") != 0:
+                raise RuntimeError(
+                    f"拉历史失败: code={data.get('code')} msg={data.get('msg')} "
+                    f"（机器人不在这个会话里，或缺少 im:message 读权限）"
+                )
+            body = data.get("data") or {}
+            for item in body.get("items") or []:
+                u = self._history_item_to_unified(item)
+                if u is not None:
+                    out.append(u)
+            page_token = body.get("page_token") or ""
+            if not body.get("has_more") or not page_token:
+                break
+        return out
+
+    def _history_item_to_unified(self, item: dict) -> UnifiedMessage | None:
+        """把 GET /im/v1/messages 的 item 转成统一消息。
+
+        注意字段和事件包不一样：这里是 msg_type / body.content / sender.id，
+        事件包里是 message.message_type / message.content / sender.sender_id.open_id。
+        """
+        mid = item.get("message_id")
+        if not mid or item.get("deleted"):
+            return None
+        try:
+            content = json.loads((item.get("body") or {}).get("content") or "{}")
+        except json.JSONDecodeError:
+            content = {}
+
+        mtype = item.get("msg_type") or "text"
+        attachments: list[dict] = []
+        if mtype == "text":
+            text = (content.get("text") or "").strip()
+        elif mtype == "post":
+            text = _post_to_text(content)
+        elif mtype == "file":
+            attachments.append(
+                {
+                    "name": content.get("file_name"),
+                    "file_key": content.get("file_key"),
+                    "mime": content.get("file_type"),
+                    "kind": "file",
+                }
+            )
+            text = f"[文件] {content.get('file_name')}"
+        elif mtype == "image":
+            attachments.append(
+                {"name": "image", "file_key": content.get("image_key"), "mime": "image/png", "kind": "image"}
+            )
+            text = "[图片]"
+        elif mtype == "audio":
+            text = "[语音]"
+        elif mtype == "media":
+            text = "[视频]"
+        else:
+            text = f"[{mtype}]"
+
+        sender = item.get("sender") or {}
+        # sender_type == "app" 是应用/机器人自己发的，方向要标成出站，
+        # 否则回填之后自己的话会显示成「对方说的」
+        direction = "out" if sender.get("sender_type") == "app" else "in"
+
+        return UnifiedMessage(
+            platform=self.platform,
+            platform_msg_id=mid,
+            chat_id=item.get("chat_id") or "",
+            chat_type=item.get("chat_type"),
+            sender_id=sender.get("id"),
+            sender_name=None,
+            msg_type="file" if mtype in ("file", "image", "audio", "media") else "text",
+            text=text,
+            attachments=attachments,
+            thread_root=item.get("parent_id") or item.get("root_id"),
+            created_at=ms_to_dt(item.get("create_time")),
+            raw=item,
+            direction=direction,
         )
 
     # ---------------- 出站 ----------------

@@ -307,6 +307,23 @@ async def bulk_priority(body: BulkPriorityIn, session: AsyncSession = Depends(ge
     return {"ok": True, "updated": changed, "scanned": len(rows)}
 
 
+@router.post("/inbox/backfill")
+async def backfill_history(
+    platform: str,
+    chat_id: str,
+    limit: int = Query(50, ge=1, le=200),
+):
+    """拉会话历史补进收件箱。
+
+    实时事件只覆盖接入之后的消息；这个接口把之前的老对话补回来。
+    走的是和实时事件同一条入库管道，回填完看不出差别。
+    """
+    try:
+        return await inbound.backfill(platform, chat_id, limit=limit)
+    except Exception as exc:
+        raise HTTPException(400, f"回填失败：{exc}") from exc
+
+
 @router.get("/inbox/{message_id}", response_model=MessageOut)
 async def get_message(message_id: int, session: AsyncSession = Depends(get_session)):
     msg = await session.get(Message, message_id)

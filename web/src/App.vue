@@ -53,6 +53,7 @@ const replyText = ref('')
 const quoting = ref(null)
 const aiText = ref('')
 const loading = ref(false)
+const pulling = ref(false) // 正在拉历史
 const sending = ref(false)
 const sendingFile = ref(false)
 const reflowOn = ref(false) // 改状态时是否给对方发回执（默认关，避免把「[统一收件箱] 已标记为…」刷进对话）
@@ -663,6 +664,29 @@ async function loadMessages() {
     notify(() => antMessage.error('加载消息失败：' + e.message), e.message)
   } finally {
     loading.value = false
+  }
+}
+
+// 拉历史：把接入之前的老消息从平台补回来（实时事件只覆盖订阅之后）
+async function pullHistory() {
+  if (!activeThread.value) return
+  pulling.value = true
+  try {
+    const r = await api.backfill(activeThread.value.platform, activeThread.value.chat_id, 100)
+    if (!r.ok) {
+      antMessage.warning(r.error || '这个平台拉不了历史')
+    } else if (r.inserted > 0) {
+      antMessage.success(`补回 ${r.inserted} 条历史消息`)
+      await Promise.all([loadMessages(), loadThreads(), loadStats()])
+    } else if (r.fetched > 0) {
+      antMessage.info(`拉了 ${r.fetched} 条，都是已经有的`)
+    } else {
+      antMessage.info(r.note || '没有拉到消息')
+    }
+  } catch (e) {
+    notify(() => antMessage.error('拉历史失败：' + e.message), e.message)
+  } finally {
+    pulling.value = false
   }
 }
 
@@ -1362,6 +1386,12 @@ onBeforeUnmount(() => {
             <a-checkbox v-model:checked="showEcho" class="echo-toggle">
               系统回执 {{ echoCount }}
             </a-checkbox>
+          </a-tooltip>
+          <a-tooltip
+            v-if="activeThread"
+            title="把接入之前的老消息从平台补回来（实时事件只覆盖接入之后）"
+          >
+            <a-button size="small" :loading="pulling" @click="pullHistory">拉历史</a-button>
           </a-tooltip>
           <a-button size="small" :loading="loading" @click="loadMessages">刷新</a-button>
         </div>

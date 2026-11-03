@@ -57,8 +57,11 @@ class UnifiedMessage:
     thread_root: str | None = None
     created_at: datetime | None = None
     raw: dict = field(default_factory=dict)
+    # 出站（自己发的）在历史回填时也要能正确标记，默认按入站处理
+    direction: str = "in"
 
     def as_row(self) -> dict[str, Any]:
+        out = self.direction == "out"
         return {
             "platform": self.platform,
             "platform_msg_id": self.platform_msg_id,
@@ -71,8 +74,8 @@ class UnifiedMessage:
             "text_body": self.text,
             "attachments": self.attachments,
             "thread_root": self.thread_root,
-            "direction": "in",
-            "status": "received",
+            "direction": self.direction,
+            "status": "sent" if out else "received",
             "created_at": self.created_at or datetime.now(timezone.utc),
             "raw": self.raw,
         }
@@ -122,6 +125,15 @@ class BaseAdapter(abc.ABC):
         收件箱里会显示一串 ou_xxx。各平台实现按需覆写；默认不做事。
         """
         return None
+
+    async def fetch_history(self, chat_id: str, limit: int = 50) -> list["UnifiedMessage"]:
+        """可选钩子：拉会话历史（把接入之前的老消息补回来）。
+
+        实时事件只能覆盖「从订阅那一刻起」的消息，历史必须主动拉。
+        各平台能力差异很大（Telegram Bot API 根本不给历史，只能 getUpdates），
+        默认返回空列表表示这个平台不支持。
+        """
+        return []
 
     # ---------- 入站 ----------
     @abc.abstractmethod

@@ -1,4 +1,4 @@
-﻿"""出站投递 worker（Outbox 模式）。
+"""出站投递 worker（Outbox 模式）。
 
 为什么不在 HTTP 请求里直接调平台 SDK：
   * 平台 429/超时不会把用户的回复请求拖死；
@@ -202,7 +202,9 @@ async def _mark_sent(row: dict, platform_msg_id: str | None) -> None:
             session.add(
                 Message(
                     platform=row["platform"],
-                    platform_msg_id=f"outbox:{row['id']}",
+                    # 有平台真实消息 ID 就用它：拉历史时飞书返回的是 om_xxx，
+                    # 如果这里存 outbox:N，去重键对不上，同一条消息会被回填成两条。
+                    platform_msg_id=platform_msg_id or f"outbox:{row['id']}",
                     chat_id=row["target_chat"],
                     msg_type="file" if payload.get("kind") == "file" else "text",
                     text_body="" if attachments else (body or ""),
