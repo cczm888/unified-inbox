@@ -37,3 +37,6 @@ web/.tmp/
 tmp/
 # 出站附件暂存（运行时产物，不入库）
 backend/uploads/
+
+# 本地工具（cloudflared.exe 等，55MB 不该入库）
+.tools/

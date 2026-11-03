@@ -21,7 +21,7 @@ if (-not (Test-Path (Join-Path $root "web\node_modules"))) {
 Write-Host "[1/3] 启动后端 http://127.0.0.1:8000 ..." -ForegroundColor Cyan
 $backendArgs = @(
     "-NoExit", "-Command",
-    "`$env:DATABASE_URL='sqlite+aiosqlite:///./local.db'; Set-Location '$root\backend'; & '$py' -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
+    "`$env:DATABASE_URL='sqlite+aiosqlite:///./local.db'; Set-Location '$root\backend'; & '$py' -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
 )
 Start-Process powershell -ArgumentList $backendArgs -WindowStyle Minimized
 
@@ -46,7 +46,7 @@ Write-Host "[2/3] 启动前端 http://127.0.0.1:5173 ..." -ForegroundColor Cyan
 Remove-Item Env:npm_config_allow_scripts -ErrorAction SilentlyContinue
 $frontArgs = @(
     "-NoExit", "-Command",
-    "Remove-Item Env:npm_config_allow_scripts -ErrorAction SilentlyContinue; Set-Location '$root\web'; `$env:TEMP='$root\web\.tmp'; `$env:TMP=`$env:TEMP; npm run dev -- --host 127.0.0.1 --port 5173"
+    "Remove-Item Env:npm_config_allow_scripts -ErrorAction SilentlyContinue; Set-Location '$root\web'; `$env:TEMP='$root\web\.tmp'; `$env:TMP=`$env:TEMP; npm run dev -- --host 0.0.0.0 --port 5173"
 )
 New-Item -ItemType Directory -Force -Path (Join-Path $root "web\.tmp") | Out-Null
 Start-Process powershell -ArgumentList $frontArgs -WindowStyle Minimized
