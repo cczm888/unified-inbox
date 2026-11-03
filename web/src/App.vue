@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message as antMessage } from 'ant-design-vue'
 import dayjs from 'dayjs'
@@ -13,6 +13,8 @@ import {
 } from './api'
 
 const platforms = ref([])
+// 库里保存的平台连接（运行时接入的那些，重启后自动恢复）
+const savedPlats = ref([])
 const threads = ref([])
 const messages = ref([])
 const todos = ref([])
@@ -239,6 +241,25 @@ async function loadAccounts() {
     antMessage.error('读取账号失败：' + e.message)
   } finally {
     accountsLoading.value = false
+  }
+  // 已接入的平台（存在库里的连接，重启后自动恢复）
+  try {
+    const r = await api.savedPlatforms()
+    savedPlats.value = r.items || []
+  } catch (e) {
+    savedPlats.value = []
+  }
+}
+
+async function removeSaved(s) {
+  try {
+    await api.disconnectPlatform(s.platform)
+    antMessage.success(`已断开${PLATFORM_LABEL[s.platform] || s.platform}`)
+    await loadAccounts()
+    await loadPlatforms()
+    await loadThreads()
+  } catch (e) {
+    antMessage.error('断开失败：' + e.message)
   }
 }
 
@@ -1066,6 +1087,23 @@ onBeforeUnmount(() => {
       <a-divider v-if="syncResult" />
       <div v-if="syncResult" style="font-size: 12px; color: #389e0d">{{ syncResult }}</div>
 
+      <a-divider>已接入的平台</a-divider>
+      <div v-if="!savedPlats.length" class="acc-empty">
+        还没有接入任何平台。下面填一次凭证就会出现在这里，重启后自动恢复。
+      </div>
+      <div v-for="s in savedPlats" :key="s.id" class="saved-card">
+        <div class="saved-row">
+          <span class="st-pill plat-pill">{{ PLATFORM_LABEL[s.platform] || s.platform }}</span>
+          <span class="saved-label" :title="s.label || s.app_id">{{ s.label || s.app_id }}</span>
+          <span class="saved-status" :class="s.status === 'active' ? 'is-ok' : 'is-bad'">
+            {{ s.status === 'active' ? '已连接' : '异常' }}
+          </span>
+          <a-popconfirm title="断开这个平台？库里的凭证会一起删掉" @confirm="removeSaved(s)">
+            <a-button size="small" type="text" danger>断开</a-button>
+          </a-popconfirm>
+        </div>
+      </div>
+
       <a-divider>接入新平台</a-divider>
       <a-card size="small" style="margin-bottom: 12px">
         <template #title>
@@ -1864,6 +1902,27 @@ onBeforeUnmount(() => {
 }
 .bubble:hover .quote-btn { opacity: 1; }
 .quote-btn:hover { color: var(--brand); }
+.acc-empty { font-size: 12px; color: var(--t3); line-height: 1.7; padding: 2px 0 10px; }
+.saved-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--panel);
+}
+.saved-row { display: flex; align-items: center; gap: 8px; }
+.saved-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--t1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.saved-status { font-size: 12px; flex: none; }
+.saved-status.is-ok { color: var(--green); }
+.saved-status.is-bad { color: var(--red); }
 .quote-bar {
   display: flex;
   align-items: baseline;

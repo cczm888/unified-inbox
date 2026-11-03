@@ -78,6 +78,30 @@ def _iter_parts(msg: Message, prefix: str = ""):
             yield num, part
 
 
+def _clean_body(body: str) -> str:
+    """HTML 转出来的文本会留下一堆空格缩进和成片空行，直接塞进气泡没法看。
+
+    邮件客户端多半还会在末尾附一大段退订/隐私声明，这里也不做智能剔除——
+    宁可多留，也别把用户真正说的话误删。
+    """
+    if not body:
+        return ""
+    lines = [ln.rstrip() for ln in body.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    out: list[str] = []
+    blank = 0
+    for ln in lines:
+        if ln.strip():
+            blank = 0
+            # 整行 strip：HTML 转文本留下的缩进（几十个空格）没有任何语义，
+            # 留着只会让气泡里出现一片锯齿状的空洞。
+            out.append(ln.strip())
+        else:
+            blank += 1
+            if blank <= 1:  # 连续空行最多留一行
+                out.append("")
+    return "\n".join(out).strip()
+
+
 def _parse_mail(raw_bytes: bytes, uid: str) -> dict:
     """把一封原始邮件解析成 dict（放 EventLog 里可追溯，也便于调试）。"""
     msg = email.message_from_bytes(raw_bytes, policy=email.policy.default)
@@ -265,7 +289,7 @@ class MailAdapter(BaseAdapter):
             except Exception:
                 created = None
         subject = raw.get("subject") or "(无主题)"
-        body = raw.get("body") or ""
+        body = _clean_body(raw.get("body") or "")
         text = body if body else subject
         return UnifiedMessage(
             platform=self.platform,
@@ -275,6 +299,7 @@ class MailAdapter(BaseAdapter):
             chat_title=f"{raw.get('from_name') or sender} <{sender}>",
             sender_id=sender,
             sender_name=raw.get("from_name") or sender,
+            text=text,
             msg_type="file" if raw.get("attachments") else "text",
             attachments=raw.get("attachments") or [],
             thread_root=raw.get("in_reply_to"),
