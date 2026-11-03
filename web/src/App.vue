@@ -72,6 +72,28 @@ const filteredThreads = computed(() =>
   activePlatform.value ? threads.value.filter((t) => t.platform === activePlatform.value) : threads.value
 )
 
+/**
+ * 筛选下拉里能选的平台 = 当前在线的平台 + 会话里出现过的平台。
+ * 后者不能省：邮箱被停用之后 registry 里就没有它了，但历史消息还在，
+ * 只按在线平台渲染的话，用户能看见邮件却没法筛它。
+ */
+const platformOptions = computed(() => {
+  const seen = new Map()
+  for (const p of platforms.value) {
+    seen.set(p.platform, { platform: p.platform, name: p.name || PLATFORM_LABEL[p.platform] || p.platform, live: p.ready })
+  }
+  for (const t of threads.value) {
+    if (!seen.has(t.platform)) {
+      seen.set(t.platform, {
+        platform: t.platform,
+        name: PLATFORM_LABEL[t.platform] || t.platform,
+        live: false,
+      })
+    }
+  }
+  return [...seen.values()]
+})
+
 const pendingTotal = computed(() => threads.value.reduce((sum, t) => sum + Number(t.pending || 0), 0))
 const unreadTotal = computed(() => threads.value.reduce((sum, t) => sum + Number(t.unread || 0), 0))
 const urgentTotal = computed(() => threads.value.reduce((sum, t) => sum + Number(t.urgent || 0), 0))
@@ -1247,12 +1269,12 @@ onBeforeUnmount(() => {
           <a-select
             v-model:value="activePlatform"
             size="small"
-            style="width: 110px"
+            style="width: 132px"
             allow-clear
             placeholder="全部平台"
           >
-            <a-select-option v-for="p in platforms" :key="p.platform" :value="p.platform">
-              {{ p.name }}
+            <a-select-option v-for="p in platformOptions" :key="p.platform" :value="p.platform">
+              {{ p.name }}{{ p.live ? '' : '·未接入' }}
             </a-select-option>
           </a-select>
         </div>
