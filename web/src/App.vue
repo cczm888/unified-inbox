@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message as antMessage } from 'ant-design-vue'
 import dayjs from 'dayjs'
@@ -17,6 +17,32 @@ const threads = ref([])
 const messages = ref([])
 const todos = ref([])
 const stats = ref(null)
+
+// 平均处理时长：按量级自动换单位，避免出现「21034 秒」这种没法读的数
+const handleNum = computed(() => {
+  const s = Number(stats.value?.avg_handle_seconds || 0)
+  if (!s) return '—'
+  if (s < 60) return String(Math.round(s))
+  if (s < 3600) return (s / 60).toFixed(s < 600 ? 1 : 0)
+  if (s < 86400) return (s / 3600).toFixed(1)
+  return (s / 86400).toFixed(1)
+})
+const handleUnit = computed(() => {
+  const s = Number(stats.value?.avg_handle_seconds || 0)
+  if (!s) return ''
+  if (s < 60) return '秒'
+  if (s < 3600) return '分'
+  if (s < 86400) return '小时'
+  return '天'
+})
+const todoPending = computed(() => {
+  const t = stats.value?.todos || {}
+  return Number(t.pending || 0) + Number(t.in_progress || 0)
+})
+const msgPending = computed(() => {
+  const b = stats.value?.by_status || {}
+  return Number(b.received || 0) + Number(b.claimed || 0)
+})
 const activePlatform = ref(undefined)
 const activeThread = ref(null)
 const selected = ref(null)
@@ -84,6 +110,17 @@ const forwardTargets = computed(() =>
 )
 
 const fmt = (v) => (v ? dayjs(v).format('MM-DD HH:mm') : '')
+
+// 列表里的时间只需要"够判断新旧"：今天给时刻，昨天给"昨天"，更早给日期
+function shortTime(v) {
+  if (!v) return ''
+  const d = dayjs(v)
+  const today = dayjs().startOf('day')
+  if (d.isSame(today, 'day')) return d.format('HH:mm')
+  if (d.isSame(today.subtract(1, 'day'), 'day')) return '昨天'
+  if (d.isAfter(today.subtract(7, 'day'))) return d.format('ddd')
+  return d.format('MM-DD')
+}
 
 function dayLabel(d) {
   const today = dayjs().startOf('day')
@@ -867,20 +904,46 @@ onBeforeUnmount(() => {
   <div class="app-root" @keydown="onKeydown">
     <header class="topbar">
       <div class="brand">
-        统一消息收件箱
-        <span class="sub">多平台连接器 · 赛题 A</span>
+        <div class="logo">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+            <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">统一消息收件箱</div>
+          <div class="brand-sub">多平台连接器 · 赛题 A</div>
+        </div>
       </div>
-      <div class="platforms">
-        <a-tag v-for="p in platforms" :key="p.platform" :color="p.ready ? PLATFORM_COLOR[p.platform] : 'default'">
-          {{ p.name }} {{ p.ready ? '在线' : '未就绪' }}
-        </a-tag>
-        <a-tag v-if="unreadTotal" color="blue">未读 {{ unreadTotal }}</a-tag>
-        <a-tag v-if="urgentTotal" color="red">紧急 {{ urgentTotal }}</a-tag>
-        <a-tag :color="pendingTotal ? 'orange' : 'default'">待处理 {{ pendingTotal }}</a-tag>
-        <a-button size="small" @click="openAccounts">👤 账号（{{ userAccounts.length }}）</a-button>
-        <a-button v-if="canNotify" size="small" type="text" @click="toggleNotify">
-          {{ notifyOn ? '🔔 桌面通知已开' : '🔕 开启桌面通知' }}
-        </a-button>
+
+      <span class="vline sep"></span>
+
+      <div class="pstatus">
+        <span v-for="p in platforms" :key="p.platform" class="pitem" :class="'p-' + p.platform">
+          <i class="pdot" :class="{ off: !p.ready }"></i>
+          <span class="pname">{{ p.name }}</span>
+          <span class="pstate">{{ p.ready ? '在线' : '未就绪' }}</span>
+        </span>
+        <span v-if="!platforms.length" class="pitem pnone">没有已接入的平台</span>
+      </div>
+
+      <div class="topbar-right">
+        <div class="metrics">
+          <span v-if="unreadTotal" class="metric m-blue">未读 <b>{{ unreadTotal }}</b></span>
+          <span v-if="urgentTotal" class="metric m-red">紧急 <b>{{ urgentTotal }}</b></span>
+          <span class="metric" :class="pendingTotal ? 'm-orange' : 'm-idle'">待处理 <b>{{ pendingTotal }}</b></span>
+        </div>
+        <span class="vline"></span>
+        <button class="ghost-btn" @click="openAccounts">
+          <span class="gb-ico">👤</span>账号
+          <span v-if="userAccounts.length" class="gb-badge">{{ userAccounts.length }}</span>
+        </button>
+        <a-tooltip v-if="canNotify" :title="notifyOn ? '桌面通知已开，点击关闭' : '收新消息时弹系统通知'">
+          <button class="ghost-btn icon-only" :class="{ on: notifyOn }" @click="toggleNotify">
+            {{ notifyOn ? '🔔' : '🔕' }}
+          </button>
+        </a-tooltip>
       </div>
     </header>
 
@@ -1060,33 +1123,49 @@ onBeforeUnmount(() => {
             </template>
           </a-input>
         </div>
-        <div class="scroll flex-1">
-          <a-empty
-            v-if="!filteredThreads.length"
-            :description="keyword ? '没搜到，换个词试试' : '还没有收到消息'"
-          />
+        <div class="scroll flex-1 thread-scroll">
+          <div v-if="!filteredThreads.length" class="empty-mini">
+            <svg v-if="keyword" class="es-svg sm" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+              <circle cx="21" cy="21" r="12" stroke="currentColor" stroke-width="2.5" />
+              <path d="M30 30l9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+            </svg>
+            <svg v-else class="es-svg sm" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+              <path d="M8 12h32v20H26l-8 7v-7H8z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" />
+            </svg>
+            <div class="em-title">{{ keyword ? '没搜到' : '还没有收到消息' }}</div>
+            <div class="em-desc">
+              {{ keyword ? '换个词，或者清空搜索框' : '在「账号」里接入平台后，消息会自动出现在这里' }}
+            </div>
+            <button v-if="!keyword" class="link-btn" @click="openAccounts">去接入平台 →</button>
+          </div>
           <div
             v-for="t in filteredThreads"
             :key="t.platform + t.chat_id"
             class="thread-item"
-            :class="{
-              active:
-                activeThread && activeThread.chat_id === t.chat_id && activeThread.platform === t.platform,
-            }"
+            :class="[
+              'p-' + t.platform,
+              {
+                active:
+                  activeThread && activeThread.chat_id === t.chat_id && activeThread.platform === t.platform,
+              },
+            ]"
             @click="openThread(t)"
           >
-            <div class="thread-top">
-              <a-tag :color="PLATFORM_COLOR[t.platform]" style="margin-right: 6px">
-                {{ PLATFORM_LABEL[t.platform] || t.platform }}
-              </a-tag>
-              <span class="thread-title">{{ t.chat_title || t.chat_id }}</span>
-              <span v-if="Number(t.urgent) > 0" class="urgent-flag" title="有紧急待处理消息">急</span>
-              <a-badge v-if="Number(t.unread) > 0" :count="Number(t.unread)" />
-            </div>
-            <div class="thread-last" v-html="highlight(t.last_text || '（无文本内容）')"></div>
-            <div class="meta">
-              {{ fmt(t.last_at) }} · 共 {{ t.total }} 条
-              <span v-if="Number(t.pending) > 0" class="pending-hint">· {{ t.pending }} 条待处理</span>
+            <span class="t-bar"></span>
+            <div class="t-main">
+              <div class="t-row1">
+                <span class="t-name">{{ t.chat_title || t.chat_id }}</span>
+                <span class="t-time">{{ shortTime(t.last_at) }}</span>
+              </div>
+              <div class="t-row2" v-html="highlight(t.last_text || '（无文本内容）')"></div>
+              <div class="t-row3">
+                <span class="t-plat">{{ PLATFORM_LABEL[t.platform] || t.platform }}</span>
+                <span v-if="Number(t.pending) > 0" class="t-pending">{{ t.pending }} 条待处理</span>
+                <span class="t-spacer"></span>
+                <span class="t-total">共 {{ t.total }} 条</span>
+                <span v-if="Number(t.urgent) > 0" class="t-urgent">急</span>
+                <span v-if="Number(t.unread) > 0" class="t-unread">{{ t.unread }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1142,18 +1221,37 @@ onBeforeUnmount(() => {
         </div>
         <div ref="msgArea" class="scroll flex-1 msg-area">
           <a-spin :spinning="loading" />
-          <a-empty v-if="!activeThread" description="在左边选一个会话" />
-          <a-empty v-else-if="!visibleMessages.length" description="这个会话还没有消息" />
+          <div v-if="!activeThread" class="empty-state">
+            <svg class="es-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+              <rect x="7" y="15" width="50" height="34" rx="9" stroke="currentColor" stroke-width="2.5" />
+              <path d="M7 26h15l4.5 6.5h11L42 26h15" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" />
+            </svg>
+            <div class="es-title">选一个会话开始</div>
+            <div class="es-desc">左侧列出所有平台的会话，点开就是完整对话</div>
+          </div>
+          <div v-else-if="!visibleMessages.length" class="empty-state">
+            <svg class="es-svg" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+              <path d="M12 16h40v26a4 4 0 0 1-4 4H30l-10 8v-8h-4a4 4 0 0 1-4-4V16z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" />
+              <path d="M22 27h20M22 34h12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+            </svg>
+            <div class="es-title">这个会话还没有消息</div>
+            <div class="es-desc">等对方发一条，或者在右侧发一条过去</div>
+          </div>
           <template v-for="row in timeline" :key="row.key">
             <div v-if="row.kind === 'day'" class="day-sep">
               <span>{{ row.label }}</span>
             </div>
             <div
               v-else
-              class="bubble"
-              :class="{ out: row.m.direction === 'out', picked: selected && selected.id === row.m.id }"
-              @click="pick(row.m)"
+              class="msg-row"
+              :class="['p-' + row.m.platform, { out: row.m.direction === 'out' }]"
             >
+              <span v-if="row.m.direction === 'in'" class="avatar">{{ (row.m.sender_name || '?').slice(0, 1) }}</span>
+              <div
+                class="bubble"
+                :class="{ out: row.m.direction === 'out', picked: selected && selected.id === row.m.id }"
+                @click="pick(row.m)"
+              >
               <div class="bubble-head">
                 <a-checkbox
                   v-if="row.m.direction === 'in'"
@@ -1165,11 +1263,11 @@ onBeforeUnmount(() => {
                 <span v-if="row.m.direction === 'in' && !row.m.read_at" class="unread-dot" title="未读"></span>
                 <span class="who">{{ row.m.sender_name || (row.m.direction === 'out' ? '我' : PLATFORM_LABEL[row.m.platform]) }}</span>
                 <a-dropdown :trigger="['click']">
-                  <a-tag
-                    :color="STATUS_COLOR[row.m.status]"
-                    style="cursor: pointer; user-select: none"
+                  <span
+                    class="st-pill"
+                    :class="'st-' + row.m.status"
                     title="点一下改状态"
-                  >{{ STATUS_LABEL[row.m.status] || row.m.status }} ▾</a-tag>
+                  >{{ STATUS_LABEL[row.m.status] || row.m.status }}</span>
                   <template #overlay>
                     <a-menu @click="({ key }) => changeStatus(row.m, key)">
                       <a-menu-item key="received">待处理</a-menu-item>
@@ -1179,14 +1277,11 @@ onBeforeUnmount(() => {
                     </a-menu>
                   </template>
                 </a-dropdown>
-                <a-tag
+                <span
                   v-if="row.m.priority === 'urgent'"
-                  color="red"
-                  closable
+                  class="urgent-pill"
                   title="点 × 取消紧急标记"
-                  @close.stop="clearPriority(row.m)"
-                >紧急</a-tag>
-                <span class="meta" style="margin-left: auto">{{ fmt(row.m.created_at) }}</span>
+                >紧急<i class="up-x" @click.stop="clearPriority(row.m)">×</i></span>
               </div>
               <div class="msg-text">{{ row.m.text || '（非文本消息）' }}</div>
               <div v-if="row.m.attachments && row.m.attachments.length" class="att-list" @click.stop>
@@ -1213,6 +1308,8 @@ onBeforeUnmount(() => {
                   </a>
                 </template>
               </div>
+              <div class="bubble-foot"><span class="meta">{{ fmt(row.m.created_at) }}</span></div>
+            </div>
             </div>
           </template>
         </div>
@@ -1222,136 +1319,218 @@ onBeforeUnmount(() => {
       <aside class="col col-right">
         <a-tabs size="small" class="flex-1 tabs">
           <a-tab-pane key="handle" tab="处理">
-            <a-empty v-if="!selected" description="点选上面的一条消息" />
+            <div v-if="!selected" class="empty-state tight">
+              <svg class="es-svg sm" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+                <rect x="7" y="11" width="34" height="26" rx="6" stroke="currentColor" stroke-width="2.5" />
+                <path d="M16 22h16M16 29h10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+              </svg>
+              <div class="es-title">点一条消息</div>
+              <div class="es-desc">选中后这里会出现状态、回复、转发</div>
+            </div>
             <div v-else class="panel">
-              <div class="kv">
-                <b>来自</b>
-                {{ selected.direction === 'out' ? '我（本站发出）' : selected.sender_name || '未知用户' }}（{{
-                  PLATFORM_LABEL[selected.platform]
-                }}）
+              <div class="info-card" :class="'p-' + selected.platform">
+                <div class="ic-top">
+                  <span class="ic-avatar">{{ (selected.direction === 'out' ? '我' : (selected.sender_name || '?')).slice(0, 1) }}</span>
+                  <div class="ic-id">
+                    <div class="ic-name">
+                      {{ selected.direction === 'out' ? '我（本站发出）' : selected.sender_name || '未知用户' }}
+                    </div>
+                    <div class="ic-sub">{{ activeThread ? activeThread.title : selected.chat_id }}</div>
+                  </div>
+                  <span class="ic-plat">{{ PLATFORM_LABEL[selected.platform] }}</span>
+                </div>
+                <div class="ic-row">
+                  <span class="ic-label">状态</span>
+                  <a-select
+                    :value="selected.status"
+                    size="small"
+                    style="width: 96px"
+                    :options="[
+                      { value: 'received', label: '待处理' },
+                      { value: 'claimed', label: '处理中' },
+                      { value: 'replied', label: '已回复' },
+                      { value: 'closed', label: '已关闭' },
+                      { value: 'sent', label: '已发送', disabled: true },
+                    ]"
+                    @change="(v) => changeStatus(selected, v)"
+                  />
+                  <span class="ic-label" style="margin-left: 12px">紧急度</span>
+                  <a-select
+                    :value="selected.priority || 'normal'"
+                    size="small"
+                    style="width: 84px"
+                    :options="[
+                      { value: 'urgent', label: '紧急' },
+                      { value: 'normal', label: '普通' },
+                      { value: 'low', label: '低' },
+                    ]"
+                    @change="(v) => changePriority(selected, v)"
+                  />
+                </div>
+                <div class="ic-row">
+                  <span class="ic-label">时间</span>
+                  <span class="ic-val">{{ fmt(selected.created_at) }}</span>
+                </div>
               </div>
-              <div class="kv"><b>会话</b> {{ activeThread ? activeThread.title : selected.chat_id }}</div>
-              <div class="kv">
-                <b>状态</b>
-                <a-select
-                  :value="selected.status"
-                  size="small"
-                  style="width: 104px"
-                  :options="[
-                    { value: 'received', label: '待处理' },
-                    { value: 'claimed', label: '处理中' },
-                    { value: 'replied', label: '已回复' },
-                    { value: 'closed', label: '已关闭' },
-                    { value: 'sent', label: '已发送', disabled: true },
-                  ]"
-                  @change="(v) => changeStatus(selected, v)"
+
+              <div class="sec">
+                <div class="sec-head">
+                  <span class="sec-title">AI 辅助</span>
+                </div>
+                <div class="btn-row">
+                  <a-button size="small" @click="doSummarize">摘要</a-button>
+                  <a-button size="small" @click="doDraft">起草回复</a-button>
+                  <a-button size="small" @click="makeTodo">转待办</a-button>
+                </div>
+                <div v-if="aiText" class="ai-box">{{ aiText }}</div>
+              </div>
+
+              <div class="sec">
+                <div class="sec-head">
+                  <span class="sec-title">回复</span>
+                  <span class="sec-hint">Ctrl + Enter 直接发</span>
+                </div>
+                <a-textarea
+                  v-model:value="replyText"
+                  :rows="4"
+                  class="reply-box"
+                  placeholder="打字回复，会直接发到对方所用平台…"
                 />
-                <a-tag v-if="selected.priority === 'urgent'" color="red">紧急</a-tag>
-              </div>
-              <div class="kv">
-                <b>紧急程度</b>
-                <a-select
-                  :value="selected.priority || 'normal'"
-                  size="small"
-                  style="width: 92px"
-                  :options="[
-                    { value: 'urgent', label: '紧急' },
-                    { value: 'normal', label: '普通' },
-                    { value: 'low', label: '低' },
-                  ]"
-                  @change="(v) => changePriority(selected, v)"
-                />
-              </div>
-              <div class="kv"><b>时间</b> {{ fmt(selected.created_at) }}</div>
-
-              <div class="btn-row">
-                <a-button size="small" @click="doSummarize">AI 摘要</a-button>
-                <a-button size="small" @click="doDraft">AI 草稿</a-button>
-                <a-button size="small" @click="makeTodo">转待办</a-button>
+                <div class="btn-row">
+                  <a-button type="primary" :loading="sending" @click="sendReply">发送</a-button>
+                  <a-upload :before-upload="doSendFile" :show-upload-list="false">
+                    <a-button :loading="sendingFile">📎 发文件</a-button>
+                  </a-upload>
+                  <span class="btn-gap"></span>
+                  <a-button size="small" @click="setStatus('claimed')">处理中</a-button>
+                  <a-button size="small" @click="setStatus('closed')">关闭</a-button>
+                </div>
+                <a-checkbox v-model:checked="reflowOn" class="reflow-check">
+                  改状态时给对方发一条回执
+                  <span class="reflow-hint">默认不发，避免刷屏</span>
+                </a-checkbox>
               </div>
 
-              <div v-if="aiText" class="ai-box">{{ aiText }}</div>
-
-              <a-textarea
-                v-model:value="replyText"
-                :rows="4"
-                placeholder="输入回复内容，Ctrl + Enter 直接发送"
-                style="margin-top: 10px"
-              />
-              <div class="btn-row">
-                <a-button type="primary" size="small" :loading="sending" @click="sendReply">发送回复</a-button>
-                <a-upload :before-upload="doSendFile" :show-upload-list="false">
-                  <a-button size="small" :loading="sendingFile">📎 发文件</a-button>
-                </a-upload>
-                <a-button size="small" @click="setStatus('claimed')">标记处理中</a-button>
-                <a-button size="small" @click="setStatus('closed')">关闭</a-button>
-              </div>
-
-              <a-checkbox v-model:checked="reflowOn" class="reflow-check">
-                改状态时给对方发一条回执
-                <span class="reflow-hint">（默认不发，避免刷屏）</span>
-              </a-checkbox>
-
-              <div class="divider">转发到其他会话</div>
-              <div class="btn-row">
-                <a-select
-                  v-model:value="forwardKey"
-                  size="small"
-                  style="flex: 1"
-                  placeholder="选择一个目标会话"
-                  :options="forwardTargets"
-                  not-found-content="还没有其他会话可转发"
-                />
-                <a-button size="small" :disabled="!forwardKey" @click="doForward">转发</a-button>
+              <div class="sec">
+                <div class="sec-head">
+                  <span class="sec-title">转发到其他会话</span>
+                </div>
+                <div class="btn-row">
+                  <a-select
+                    v-model:value="forwardKey"
+                    style="flex: 1"
+                    placeholder="选一个目标会话"
+                    :options="forwardTargets"
+                    not-found-content="还没有其他会话可转发"
+                  />
+                  <a-button :disabled="!forwardKey" @click="doForward">转发</a-button>
+                </div>
               </div>
             </div>
           </a-tab-pane>
 
           <a-tab-pane key="todos" tab="待办">
-            <a-empty v-if="!todos.length" description="暂无待办" />
-            <div v-for="t in todos" :key="t.id" class="todo-item">
-              <div class="todo-title">{{ t.title }}</div>
-              <div class="btn-row">
-                <a-tag :color="PLATFORM_COLOR[t.platform]">{{ PLATFORM_LABEL[t.platform] }}</a-tag>
-                <a-tag :color="TODO_STATUS_COLOR[t.status]">{{ TODO_STATUS_LABEL[t.status] || t.status }}</a-tag>
+            <div v-if="!todos.length" class="empty-state tight">
+              <svg class="es-svg sm" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+                <rect x="10" y="9" width="28" height="32" rx="6" stroke="currentColor" stroke-width="2.5" />
+                <path d="M17 19h14M17 26h14M17 33h8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+              </svg>
+              <div class="es-title">还没有待办</div>
+              <div class="es-desc">在消息上点「转待办」，它就会出现在这里</div>
+            </div>
+            <div
+              v-for="t in todos"
+              :key="t.id"
+              class="todo-item"
+              :class="{ 'is-done': t.status === 'done' }"
+            >
+              <div class="td-top">
+                <span class="td-dot" :class="'td-' + t.status"></span>
+                <span class="td-title">{{ t.title }}</span>
+              </div>
+              <div class="td-meta">
+                <span class="st-pill plat-pill">{{ PLATFORM_LABEL[t.platform] || t.platform }}</span>
+                <span class="st-pill" :class="'todo-' + t.status">{{ TODO_STATUS_LABEL[t.status] || t.status }}</span>
                 <span class="meta">{{ fmt(t.created_at) }}</span>
-                <a-button v-if="t.status !== 'done'" size="small" type="link" @click="completeTodo(t)">
-                  完成并回流
-                </a-button>
+                <a-button
+                  v-if="t.status !== 'done'"
+                  size="small"
+                  type="link"
+                  class="td-act"
+                  @click="completeTodo(t)"
+                >完成</a-button>
               </div>
             </div>
           </a-tab-pane>
 
           <a-tab-pane key="stats" tab="看板">
             <div v-if="stats" class="panel">
-              <div class="kpi">
-                <div class="kpi-num">{{ Math.round(stats.avg_handle_seconds || 0) }}<span class="unit">秒</span></div>
+              <div class="kpi-card">
+                <div class="kpi-num">{{ handleNum }}<span class="kpi-unit">{{ handleUnit }}</span></div>
                 <div class="kpi-label">平均处理时长</div>
               </div>
-              <div class="divider">消息</div>
-              <div class="kv">
-                已回复 <b>{{ stats.by_status.replied || 0 }}</b> 条 ·
-                已关闭 <b>{{ stats.by_status.closed || 0 }}</b> 条 ·
-                待处理 <b>{{ (stats.by_status.received || 0) + (stats.by_status.claimed || 0) }}</b> 条
+
+              <div class="stat-grid">
+                <div class="stat-cell">
+                  <div class="sc-num">{{ stats.by_status.replied || 0 }}</div>
+                  <div class="sc-label">已回复</div>
+                </div>
+                <div class="stat-cell">
+                  <div class="sc-num">{{ stats.by_status.closed || 0 }}</div>
+                  <div class="sc-label">已关闭</div>
+                </div>
+                <div class="stat-cell">
+                  <div class="sc-num warn">{{ msgPending }}</div>
+                  <div class="sc-label">待处理</div>
+                </div>
               </div>
-              <div class="divider">出站队列</div>
-              <div class="kv">
-                已发送 <b>{{ stats.outbox.sent || 0 }}</b> ·
-                排队中 <b>{{ (stats.outbox.queued || 0) + (stats.outbox.sending || 0) }}</b> ·
-                失败 <b>{{ (stats.outbox.failed || 0) + (stats.outbox.dead || 0) }}</b>
+
+              <div class="sec">
+                <div class="sec-title">出站队列</div>
+                <div class="bar-row">
+                  <span class="br-label">已发送</span>
+                  <span class="br-num">{{ stats.outbox.sent || 0 }}</span>
+                </div>
+                <div class="bar-row">
+                  <span class="br-label">排队 / 发送中</span>
+                  <span class="br-num">{{ (stats.outbox.queued || 0) + (stats.outbox.sending || 0) }}</span>
+                </div>
+                <div class="bar-row">
+                  <span class="br-label">失败</span>
+                  <span class="br-num" :class="{ bad: (stats.outbox.failed || 0) + (stats.outbox.dead || 0) > 0 }">
+                    {{ (stats.outbox.failed || 0) + (stats.outbox.dead || 0) }}
+                  </span>
+                </div>
               </div>
-              <div class="divider">待办</div>
-              <div class="kv">
-                待处理 <b>{{ stats.todos.pending || 0 }}</b> · 进行中 <b>{{ stats.todos.in_progress || 0 }}</b> ·
-                已完成 <b>{{ stats.todos.done || 0 }}</b>
+
+              <div class="sec">
+                <div class="sec-title">待办</div>
+                <div class="bar-row">
+                  <span class="br-label">未完成</span>
+                  <span class="br-num">{{ todoPending }}</span>
+                </div>
+                <div class="bar-row">
+                  <span class="br-label">已完成</span>
+                  <span class="br-num">{{ stats.todos.done || 0 }}</span>
+                </div>
               </div>
-              <div class="divider">各平台</div>
-              <div v-for="row in stats.by_platform" :key="row.platform" class="kv">
-                {{ PLATFORM_LABEL[row.platform] || row.platform }}：收 {{ row.inbound }} / 回 {{ row.replied }} / 待
-                {{ row.pending }}
+
+              <div class="sec">
+                <div class="sec-title">各平台</div>
+                <div v-for="row in stats.by_platform" :key="row.platform" class="plat-row">
+                  <span class="st-pill plat-pill">{{ PLATFORM_LABEL[row.platform] || row.platform }}</span>
+                  <span class="pr-nums">收 {{ row.inbound }} · 回 {{ row.replied }} · 待 {{ row.pending }}</span>
+                </div>
+                <div v-if="!stats.by_platform || !stats.by_platform.length" class="kv">还没有平台数据</div>
               </div>
             </div>
-            <a-empty v-else description="暂无统计" />
+            <div v-else class="empty-state tight">
+              <svg class="es-svg sm" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+                <path d="M8 36V22M19 36V14M30 36V26M41 36V19" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+              </svg>
+              <div class="es-title">还没有数据</div>
+              <div class="es-desc">收发几条消息后，这里会出现统计</div>
+            </div>
           </a-tab-pane>
         </a-tabs>
       </aside>
@@ -1360,26 +1539,74 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.app-root { height: 100vh; display: flex; flex-direction: column; }
+/* ================= 骨架 ================= */
+.app-root { height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--t1); }
+
+/* ================= 顶栏 ================= */
 .topbar {
-  height: 56px; display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px; background: #fff; border-bottom: 1px solid #f0f0f0;
+  flex: none; height: 60px; display: flex; align-items: center; gap: 22px;
+  padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line);
+  position: relative; z-index: 5;
 }
-.brand { font-weight: 700; font-size: 16px; }
-.sub { font-weight: 400; font-size: 12px; color: #999; margin-left: 8px; }
+.brand { display: flex; align-items: center; gap: 10px; flex: none; }
+.logo {
+  width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+  color: #fff; background: linear-gradient(135deg, #5a8dff, var(--brand) 55%, #1f4fd8);
+  box-shadow: 0 2px 7px rgba(47, 107, 255, 0.35);
+}
+.brand-title { font-size: 14px; font-weight: 650; line-height: 1.25; letter-spacing: 0.2px; }
+.brand-sub { font-size: 11px; color: var(--t3); margin-top: 1px; }
+
+.pstatus { display: flex; align-items: center; gap: 16px; flex: none; min-width: 0; }
+.pitem { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--t2); white-space: nowrap; }
+.pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--p, var(--green)); flex: none; }
+.pdot.off { background: #cbd2dc; }
+.pstate { color: var(--t3); font-size: 11px; }
+.pnone { color: var(--t3); font-size: 12px; }
+
+.topbar-right { display: flex; align-items: center; gap: 10px; flex: none; margin-left: auto; }
+.metrics { display: flex; align-items: center; gap: 6px; }
+.metric {
+  font-size: 12px; color: var(--t2); padding: 3px 10px; border-radius: 20px;
+  background: var(--sub); border: 1px solid var(--line-soft); white-space: nowrap;
+}
+.metric b { font-weight: 680; }
+.m-blue { color: var(--brand); background: var(--brand-weak); border-color: var(--brand-line); }
+.m-red { color: var(--red); background: var(--red-weak); border-color: var(--red-line); }
+.m-orange { color: var(--orange); background: var(--orange-weak); border-color: var(--orange-line); }
+.m-idle { color: var(--t3); }
+.vline { width: 1px; height: 20px; background: var(--line); flex: none; }
+.vline.sep { margin: 0 2px; }
+.ghost-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
+  border-radius: 8px; border: 1px solid transparent; background: transparent;
+  color: var(--t2); font-size: 12.5px; cursor: pointer; font-family: inherit;
+  transition: background 0.12s, color 0.12s;
+}
+.ghost-btn:hover { background: var(--hover); color: var(--t1); }
+.ghost-btn.on { color: var(--brand); background: var(--brand-weak); }
+.icon-only { font-size: 14px; padding: 0 9px; }
+.gb-ico { font-size: 13px; }
+.gb-badge {
+  background: var(--brand); color: #fff; border-radius: 9px; font-size: 10px;
+  padding: 0 5px; line-height: 15px; font-weight: 600;
+}
+
+/* ================= 三栏 ================= */
 .main { flex: 1; display: flex; min-height: 0; }
-.col { display: flex; flex-direction: column; background: #fff; min-height: 0; }
-.col-left { width: 300px; border-right: 1px solid #f0f0f0; }
-.col-mid { flex: 1; border-right: 1px solid #f0f0f0; }
-.col-right { width: 380px; }
+.col { display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+.col-left { width: 308px; flex: none; background: var(--sub); border-right: 1px solid var(--line); }
+.col-mid { flex: 1; min-width: 0; }
+.col-right { width: 372px; flex: none; border-left: 1px solid var(--line); }
 
 /* 窄屏（手机 / 分屏）：三栏变单栏，点开会话后列表收起。
    这是"普通员工在手机上查一条消息"的最低要求，不做就只能在电脑上用。 */
 .back-btn { display: none; }
 @media (max-width: 900px) {
-  .topbar { flex-wrap: wrap; gap: 6px; height: auto; padding: 8px 10px; }
+  .topbar { flex-wrap: wrap; gap: 8px; height: auto; padding: 10px 12px; }
+  .pstatus { gap: 10px; }
   .main { flex-direction: column; overflow-y: auto; }
-  .col { width: 100% !important; flex: none; border-right: none; }
+  .col { width: 100% !important; flex: none; border-right: none; border-left: none; }
   .col-left { display: flex; }
   .col-mid, .col-right { display: none; }
   .main.reading .col-left { display: none; }
@@ -1387,91 +1614,255 @@ onBeforeUnmount(() => {
   .main.reading .col-right { display: flex; min-height: 40vh; }
   .back-btn { display: inline-block; }
   .scroll { max-height: none; }
+  .bubble { max-width: 86%; }
+  .msg-area { padding: 14px 14px 20px; }
 }
+
 .flex-1 { flex: 1; min-height: 0; }
-.msg-area { padding: 14px 16px; }
-.mid-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.thread-top { display: flex; align-items: center; gap: 6px; }
-.thread-title { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-last { font-size: 12px; color: #666; margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bubble-head { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 4px; }
-.bubble.picked { outline: 2px solid #91caff; }
-.who { font-weight: 600; color: #333; }
-.day-sep { text-align: center; margin: 14px 0 6px; color: #bbb; font-size: 12px; }
-.day-sep span { background: #fafafa; padding: 2px 10px; border-radius: 10px; }
-.panel { padding: 4px 2px; }
-.kv { font-size: 13px; color: #333; margin-bottom: 6px; }
-.btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-.reflow-check { margin-top: 8px; font-size: 12px; color: #666; }
-.reflow-hint { color: #bbb; }
-.echo-toggle { font-size: 12px; color: #999; margin-left: auto; margin-right: 10px; }
-.ai-box {
-  margin-top: 10px; padding: 8px 10px; background: #f6ffed;
-  border: 1px solid #b7eb8f; border-radius: 6px; font-size: 13px; white-space: pre-wrap;
+.msg-area { padding: 20px 26px 26px; background: #fbfcfd; }
+.mid-title { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; flex: 1; min-width: 0; }
+
+/* ================= 左侧列表 ================= */
+.col-left .col-head { background: transparent; border-bottom: 1px solid var(--line); }
+.col-left .col-head > span:first-child { font-weight: 650; font-size: 13.5px; }
+.search-bar { padding: 10px 12px 8px; }
+.thread-scroll { padding: 4px 8px 14px; }
+
+.t-bar {
+  position: absolute; left: 5px; top: 13px; bottom: 13px; width: 3px;
+  border-radius: 2px; background: var(--p, var(--t3)); opacity: 0; transition: opacity 0.12s;
 }
-.divider { margin: 14px 0 6px; font-size: 12px; color: #999; border-top: 1px dashed #f0f0f0; padding-top: 8px; }
-.todo-item { padding: 8px 0; border-bottom: 1px solid #fafafa; }
-.todo-title { font-size: 13px; margin-bottom: 4px; }
-.tabs { padding: 0 12px; }
-.kpi { text-align: center; padding: 10px 0; }
-.kpi-num { font-size: 30px; font-weight: 700; color: #1677ff; }
-.kpi-num .unit { font-size: 13px; font-weight: 400; color: #999; margin-left: 4px; }
-.search-bar { padding: 8px 12px; border-bottom: 1px solid #f5f5f5; }
-.search-hint { font-size: 11px; color: #bbb; }
+.thread-item.active .t-bar { opacity: 1; }
+.t-main { flex: 1; min-width: 0; }
+.t-row1 { display: flex; align-items: baseline; gap: 8px; }
+.t-name {
+  flex: 1; font-size: 13px; font-weight: 600; color: var(--t1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.t-time { flex: none; font-size: 11px; color: var(--t3); }
+.t-row2 {
+  font-size: 12px; color: var(--t2); margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.t-row3 { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; min-height: 16px; }
+.t-plat { color: var(--p, var(--t3)); font-weight: 600; }
+.t-pending { color: var(--orange); }
+.t-total { color: #c3c9d4; }
+.t-spacer { flex: 1; }
+.t-urgent {
+  color: var(--red); background: var(--red-weak); border: 1px solid var(--red-line);
+  border-radius: 4px; padding: 0 4px; font-weight: 700; line-height: 14px; font-size: 10.5px;
+}
+.t-unread {
+  min-width: 16px; height: 16px; border-radius: 8px; background: var(--brand); color: #fff;
+  font-size: 10.5px; display: grid; place-items: center; padding: 0 4px; font-weight: 600;
+}
 .thread-last :deep(mark) { background: #ffe58f; color: inherit; padding: 0 1px; border-radius: 2px; }
-.att-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.t-row2 :deep(mark) { background: #ffe58f; color: inherit; padding: 0 1px; border-radius: 2px; }
+
+/* 空状态 */
+.empty-mini { padding: 56px 24px; text-align: center; }
+.em-title { margin-top: 12px; font-size: 13px; color: var(--t2); font-weight: 650; }
+.em-desc { margin-top: 5px; font-size: 12px; color: var(--t3); line-height: 1.6; }
+.link-btn {
+  margin-top: 14px; border: none; background: none; color: var(--brand);
+  font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.link-btn:hover { text-decoration: underline; }
+.empty-state {
+  height: 100%; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 3px; padding: 40px;
+}
+.empty-state.tight { height: auto; padding: 48px 16px; }
+.es-svg { width: 64px; height: 64px; color: #d3dae4; margin-bottom: 16px; flex: none; }
+.es-svg.sm { width: 46px; height: 46px; margin-bottom: 12px; }
+.es-title { font-size: 14px; font-weight: 650; color: var(--t2); }
+.es-desc { font-size: 12.5px; color: var(--t3); text-align: center; line-height: 1.6; }
+
+/* ================= 消息流 ================= */
+.day-sep { text-align: center; margin: 18px 0 12px; }
+.day-sep span { font-size: 11.5px; color: var(--t3); background: var(--sub); padding: 3px 12px; border-radius: 20px; }
+.msg-row { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 14px; }
+.bubble { margin-bottom: 0; }
+.bubble-foot { text-align: right; margin-top: 6px; line-height: 1; }
+.bubble-foot .meta { font-size: 11px; color: var(--t3); }
+
+/* ================= 待办卡片 ================= */
+.todo-item {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 11px 12px; margin-bottom: 9px; transition: border-color .15s, box-shadow .15s;
+}
+.todo-item:hover { border-color: var(--brand-line); box-shadow: var(--sh1); }
+.todo-item.is-done { opacity: .62; }
+.td-top { display: flex; align-items: flex-start; gap: 7px; margin-bottom: 7px; }
+.td-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; margin-top: 6px; background: var(--orange); }
+.td-dot.td-in_progress { background: var(--brand); }
+.td-dot.td-done { background: var(--green); }
+.td-dot.td-cancelled { background: var(--t3); }
+.td-title { font-size: 13px; line-height: 1.5; color: var(--t1); word-break: break-word; }
+.td-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.td-act { margin-left: auto; padding: 0; height: 20px; font-size: 12px; }
+.st-pill.todo-pending { background: #fff7e8; color: #ad6800; border-color: #ffe1b0; }
+.st-pill.todo-in_progress { background: var(--brand-weak); color: var(--brand); border-color: var(--brand-line); }
+.st-pill.todo-done { background: #eaf7f1; color: var(--green); border-color: #b7e3d0; }
+.st-pill.todo-cancelled { background: #f3f4f6; color: var(--t3); border-color: var(--line); }
+
+/* ================= 看板 ================= */
+.kpi-card {
+  background: linear-gradient(135deg, #f3f7ff, #eef3ff);
+  border: 1px solid var(--brand-line); border-radius: var(--r);
+  padding: 16px; text-align: center; margin-bottom: 12px;
+}
+.kpi-num { font-size: 30px; font-weight: 700; color: var(--brand); line-height: 1.1; letter-spacing: -.5px; }
+.kpi-unit { font-size: 13px; font-weight: 500; margin-left: 3px; }
+.kpi-label { font-size: 12px; color: var(--t2); margin-top: 5px; }
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+.stat-cell {
+  background: var(--sub); border: 1px solid var(--line-soft); border-radius: 9px;
+  padding: 10px 6px; text-align: center;
+}
+.sc-num { font-size: 19px; font-weight: 600; color: var(--t1); line-height: 1.2; }
+.sc-num.warn { color: var(--orange); }
+.sc-label { font-size: 11px; color: var(--t3); margin-top: 3px; }
+.bar-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; font-size: 12.5px; }
+.br-label { color: var(--t2); }
+.br-num { font-weight: 600; color: var(--t1); }
+.br-num.bad { color: var(--red); }
+.plat-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.pr-nums { font-size: 12.5px; color: var(--t2); }
+.panel .sec { margin-top: 16px; }
+.panel .sec .sec-title { margin-bottom: 4px; }
+.bubble:has(.att-list) { max-width: min(100%, 340px); }
+.msg-row.out { justify-content: flex-end; }
+.avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex: none; margin-top: 2px;
+  display: grid; place-items: center; font-size: 12px; font-weight: 600;
+  color: #fff; background: var(--p, var(--brand)); box-shadow: var(--sh1);
+}
+.bubble-head { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+.bubble.picked { border-color: #9dbcff; box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.1), 0 2px 8px rgba(47, 107, 255, 0.08); }
+.bubble:has(.ant-checkbox-wrapper-checked) { background: #f2f7ff; border-color: #9dbcff; }
+.who { font-size: 12px; font-weight: 650; color: var(--t2); }
+.bubble.out .who { color: var(--brand); }
+.bubble-time { margin-left: auto; font-size: 11px; color: var(--t3); }
+
+.st-pill {
+  font-size: 11px; padding: 1px 8px; border-radius: 20px; cursor: pointer;
+  user-select: none; border: 1px solid transparent; font-weight: 500; white-space: nowrap;
+}
+.st-pill:hover { filter: brightness(0.97); }
+.st-received { color: var(--t2); background: var(--sub); border-color: var(--line); }
+.st-claimed { color: var(--orange); background: var(--orange-weak); border-color: var(--orange-line); }
+.st-replied { color: var(--green); background: var(--green-weak); border-color: var(--green-line); }
+.st-closed { color: var(--t3); background: var(--sub); border-color: var(--line-soft); }
+.st-sent { color: var(--brand); background: var(--brand-weak); border-color: var(--brand-line); }
+.plat-pill { color: var(--t2); background: var(--sub); border-color: var(--line); cursor: default; }
+
+.urgent-pill {
+  display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 600;
+  color: var(--red); background: var(--red-weak); border: 1px solid var(--red-line);
+  border-radius: 20px; padding: 1px 3px 1px 8px;
+}
+.up-x { cursor: pointer; font-style: normal; padding: 0 4px; border-radius: 50%; line-height: 1; opacity: 0.65; }
+.up-x:hover { opacity: 1; background: var(--red-line); }
+
+.unread-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); flex: none; }
+.bulk-check { flex: none; margin-right: 1px; opacity: 0; transition: opacity 0.12s; }
+.bubble:hover .bulk-check,
+.bubble:has(.ant-checkbox-wrapper-checked) .bulk-check { opacity: 1; }
+
+.bulk-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none;
+  padding: 8px 24px; background: var(--brand-weak); border-bottom: 1px solid var(--brand-line);
+}
+.bulk-count { font-size: 12px; color: var(--brand); font-weight: 650; }
+.bulk-clear { font-size: 12px; color: var(--t2); cursor: pointer; margin-left: auto; }
+.bulk-clear:hover { color: var(--brand); }
+
+/* 附件 */
+.att-list { margin-top: 9px; display: flex; flex-direction: column; gap: 8px; }
 .att-img-wrap { display: inline-block; line-height: 0; }
 .att-img {
-  max-width: 220px; max-height: 220px; border-radius: 6px;
-  border: 1px solid #eee; object-fit: cover; cursor: zoom-in;
+  max-width: 240px; max-height: 240px; border-radius: 10px;
+  border: 1px solid var(--line-soft); object-fit: cover; cursor: zoom-in;
+  transition: box-shadow 0.15s;
 }
+.att-img:hover { box-shadow: var(--sh2); }
 .att-file {
-  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
-  padding: 6px 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;
-  font-size: 12px; color: #333; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%;
+  padding: 8px 12px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; font-size: 12.5px; color: var(--t1);
+  text-decoration: none; box-shadow: var(--sh1);
 }
-.att-file:hover { background: #f0f7ff; border-color: #bae0ff; }
+.att-file:hover { border-color: var(--brand-line); background: #f7faff; }
+.att-icon { font-size: 13px; }
 .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
-.att-dl { color: #1677ff; font-size: 11px; }
-.urgent-flag {
-  flex: none; font-size: 11px; line-height: 16px; padding: 0 5px; border-radius: 3px;
-  background: #fff1f0; color: #cf1322; border: 1px solid #ffccc7; font-weight: 600;
+.att-dl { color: var(--brand); font-size: 11.5px; }
+
+/* ================= 右栏 ================= */
+.tabs { padding: 0 16px; }
+.tabs :deep(.ant-tabs-nav) { margin-bottom: 10px; }
+.tabs :deep(.ant-tabs-tab) { font-size: 13px; }
+.panel { padding: 2px 0 24px; }
+
+.info-card {
+  border: 1px solid var(--line); border-radius: var(--r); padding: 13px 14px;
+  background: var(--sub); margin-bottom: 4px;
 }
-.pending-hint { color: #d46b08; }
-.unread-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: #1677ff;
-  display: inline-block; flex: none;
+.ic-top { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
+.ic-avatar {
+  width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center;
+  font-size: 13px; font-weight: 700; color: #fff; background: var(--p, var(--brand)); flex: none;
 }
-.bulk-toolbar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 7px 16px; background: #fafafa; border-bottom: 1px solid #f0f0f0; flex: none;
+.ic-id { flex: 1; min-width: 0; }
+.ic-name { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ic-sub { font-size: 11.5px; color: var(--t3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ic-plat {
+  flex: none; font-size: 11px; color: var(--p, var(--t3)); background: var(--panel);
+  border: 1px solid var(--line-soft); border-radius: 20px; padding: 1px 8px; font-weight: 500;
 }
-.bulk-count { font-size: 12px; color: #1677ff; font-weight: 600; }
-.bulk-clear { font-size: 12px; color: #8c8c8c; cursor: pointer; margin-left: auto; }
-.bulk-clear:hover { color: #1677ff; }
-.bulk-check { flex: none; margin-right: 2px; }
-/* 勾选中的气泡给个底色，不然小方框在长列表里看不清选了哪几条 */
-.bubble:has(.ant-checkbox-wrapper-checked) {
-  background: #f0f7ff;
-  border-color: #91caff;
+.ic-row { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.ic-label { font-size: 11.5px; color: var(--t3); white-space: nowrap; }
+.ic-val { font-size: 12px; color: var(--t2); }
+
+.sec { padding: 14px 0; border-top: 1px solid var(--line-soft); }
+.sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.sec-title { font-size: 12px; font-weight: 650; color: var(--t2); letter-spacing: 0.3px; }
+.sec-hint { font-size: 11px; color: var(--t3); }
+.btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 9px; }
+.btn-gap { flex: 1; }
+.reply-box { border-radius: var(--r-sm); }
+.reflow-check { margin-top: 10px; font-size: 11.5px; color: var(--t3); }
+.reflow-hint { color: #c3c9d4; margin-left: 3px; }
+.ai-box {
+  margin-top: 10px; padding: 10px 12px; background: var(--green-weak);
+  border: 1px solid var(--green-line); border-radius: var(--r-sm);
+  font-size: 12.5px; white-space: pre-wrap; line-height: 1.65; color: #17604a;
 }
-.acc-meta { font-size: 12px; color: #8c8c8c; line-height: 1.8; margin-bottom: 8px; }
+
+.todo-item { padding: 11px 0; border-bottom: 1px solid var(--line-soft); }
+.todo-title { font-size: 13px; margin-bottom: 6px; color: var(--t1); }
+.kpi { text-align: center; padding: 18px 0 8px; }
+.kpi-num { font-size: 34px; font-weight: 700; color: var(--brand); line-height: 1.1; letter-spacing: -0.5px; }
+.kpi-num .unit { font-size: 13px; font-weight: 400; color: var(--t3); margin-left: 4px; }
+.kpi-label { font-size: 12px; color: var(--t3); margin-top: 2px; }
+.divider {
+  margin: 16px 0 8px; padding-top: 10px; font-size: 11.5px; color: var(--t3);
+  border-top: 1px solid var(--line-soft); font-weight: 650;
+}
+.kv { font-size: 12.5px; color: var(--t2); margin-bottom: 5px; }
+
+/* ================= 抽屉（账号 / 接入） ================= */
+.acc-meta { font-size: 12px; color: var(--t3); line-height: 1.8; margin-bottom: 8px; }
 .acc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.chat-list { margin-top: 10px; max-height: 220px; overflow-y: auto; border-top: 1px solid #f0f0f0; }
+.chat-list { margin-top: 10px; max-height: 220px; overflow-y: auto; border-top: 1px solid var(--line-soft); }
 .chat-row {
   display: flex; justify-content: space-between; gap: 8px;
-  padding: 5px 0; font-size: 12px; border-bottom: 1px dashed #f5f5f5;
+  padding: 6px 0; font-size: 12px; border-bottom: 1px dashed var(--line-soft);
 }
-.chat-name { color: #262626; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-meta { color: #bfbfbf; flex: none; }
-.kpi-label { font-size: 12px; color: #999; }
-.guide-list {
-  margin: 0 0 8px;
-  padding-left: 18px;
-  font-size: 12px;
-  line-height: 1.9;
-  color: #595959;
-}
+.chat-name { color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-meta { color: var(--t3); flex: none; }
+.guide-list { margin: 0 0 8px; padding-left: 18px; font-size: 12px; line-height: 1.9; color: var(--t2); }
 .guide-list li { margin-bottom: 2px; }
-.guide-link { font-size: 12px; color: #1677ff; }
+.guide-link { font-size: 12px; color: var(--brand); }
 </style>

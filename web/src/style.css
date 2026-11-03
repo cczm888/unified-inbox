@@ -1,23 +1,122 @@
+﻿/* ============================================================
+   全局样式：设计 token + 基础组件类
+   组件专属样式在 App.vue 的 <style scoped> 里
+   ============================================================ */
+
+:root {
+  /* 表面 */
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --sub: #fafbfc;
+  --hover: #f5f7fa;
+  /* 线条 */
+  --line: #e9ecf0;
+  --line-soft: #f1f3f6;
+  /* 文字 */
+  --t1: #1a1d21;
+  --t2: #5a6474;
+  --t3: #98a1b0;
+  /* 品牌与语义色 */
+  --brand: #2f6bff;
+  --brand-weak: #eef3ff;
+  --brand-line: #cfdcff;
+  --red: #e5484d;
+  --red-weak: #fff1f0;
+  --red-line: #ffd9d8;
+  --orange: #d98216;
+  --orange-weak: #fff8e6;
+  --orange-line: #ffe4b3;
+  --green: #17916c;
+  --green-weak: #eafaf3;
+  --green-line: #b7ebd4;
+  /* 形状 */
+  --r: 10px;
+  --r-sm: 6px;
+  --sh1: 0 1px 2px rgba(20, 28, 45, 0.04), 0 1px 3px rgba(20, 28, 45, 0.05);
+  --sh2: 0 6px 20px rgba(20, 28, 45, 0.08);
+  /* 平台色 */
+  --p-feishu: #3370ff;
+  --p-email: #d98216;
+  --p-telegram: #2aabee;
+  --p-dingtalk: #1677ff;
+}
+
+.p-feishu { --p: var(--p-feishu); }
+.p-email { --p: var(--p-email); }
+.p-telegram { --p: var(--p-telegram); }
+.p-dingtalk { --p: var(--p-dingtalk); }
+
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  background: #f5f6f8;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--t1);
+  -webkit-font-smoothing: antialiased;
+  font-size: 13px;
 }
+
 .msg-text { white-space: pre-wrap; word-break: break-word; }
+
+/* 滚动条：默认太粗，压细并做圆角 */
+.scroll { overflow-y: auto; overflow-x: hidden; }
+.scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll::-webkit-scrollbar-thumb {
+  background: #d9dee6;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.scroll::-webkit-scrollbar-thumb:hover { background: #c2c9d4; background-clip: padding-box; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* 列标题 */
 .col-head {
-  padding: 12px 16px; font-weight: 600; border-bottom: 1px solid #f0f0f0;
-  display: flex; align-items: center; justify-content: space-between;
+  height: 52px;
+  flex: none;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel);
 }
-.scroll { overflow-y: auto; }
+
+/* 会话列表项 */
 .thread-item {
-  padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #fafafa;
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 10px 15px;
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
 }
-.thread-item:hover { background: #fafafa; }
-.thread-item.active { background: #e6f4ff; }
+.thread-item:hover { background: var(--panel); box-shadow: var(--sh1); }
+.thread-item.active { background: var(--panel); box-shadow: var(--sh1); }
+
+/* 消息气泡 */
 .bubble {
-  max-width: 78%; padding: 8px 12px; border-radius: 8px; margin-bottom: 10px;
-  background: #fff; border: 1px solid #f0f0f0; line-height: 1.6;
+  max-width: 68%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border-top-left-radius: 5px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(20, 28, 45, 0.05);
+  margin-bottom: 0;
+  line-height: 1.65;
+  transition: box-shadow 0.12s ease, border-color 0.12s ease;
 }
-.bubble.out { margin-left: auto; background: #e6f4ff; border-color: #bae0ff; }
-.meta { color: #999; font-size: 12px; }
+.bubble:hover { border-color: var(--line); box-shadow: 0 2px 8px rgba(20, 28, 45, 0.07); }
+.bubble.out {
+  margin-left: auto;
+  background: var(--brand-weak);
+  border-color: var(--brand-line);
+  border-top-left-radius: 14px;
+  border-top-right-radius: 5px;
+}
+
+.meta { color: var(--t3); font-size: 12px; }
