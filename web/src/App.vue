@@ -961,7 +961,13 @@ function connectSSE() {
       }
     } catch (_) { /* 心跳帧忽略 */ }
   }
-  es.onerror = () => { /* 浏览器会自动重连 */ }
+  es.onerror = () => {
+    // EventSource 会用同样的地址自动重连；未登录时会一直 401，
+    // 所以先探一次，确实是没登录就直接去登录页，别在这无声地重试。
+    fetch('/api/v1/platforms', { method: 'GET' }).then((r) => {
+      if (r.status === 401) window.location.href = '/api/v1/auth/login'
+    }).catch(() => {})
+  }
 }
 
 // 首屏加载完之前的 pendingTotal 变化是"加载"，不是"新消息"

@@ -13,13 +13,15 @@ import contextlib
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .adapters import build_registry, registry
 from .api import auth, inbox, platforms, stats, todos
 from .config import settings
 from .db import SessionLocal, close_all, init_db
+from .security import COOKIE_NAME, is_authenticated, login_page
 from .services import accounts, inbound, outbox
 from .services import platforms as platform_svc
 
@@ -91,6 +93,35 @@ async def _token_watch(stop_event: asyncio.Event) -> None:
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
+
+# 免登录路径：健康检查（不含敏感数据）+ 登录页本身
+_PUBLIC_PATHS = {"/healthz", "/api/v1/auth/login", "/favicon.ico"}
+
+
+@app.middleware("http")
+async def access_guard(request: Request, call_next):
+    """访问口令校验。
+
+    系统里是一个人所有平台的原始消息，监听 0.0.0.0 或开隧道后就是公开的。
+    只要 ACCESS_PASSWORD 非空，除登录页与健康检查外一律要求带 cookie。
+    """
+    if not settings.auth_required:
+        return await call_next(request)
+
+    path = request.url.path
+    if path in _PUBLIC_PATHS:
+        return await call_next(request)
+    if is_authenticated(request.cookies.get(COOKIE_NAME)):
+        return await call_next(request)
+
+    # 浏览器直接敲地址 → 给登录页；前端 fetch → 给 401 让 SPA 跳去登录
+    if "text/html" in request.headers.get("accept", "") and not path.startswith("/api/"):
+        return HTMLResponse(login_page(), status_code=401)
+    return JSONResponse(
+        {"detail": "未登录：请访问 /api/v1/auth/login 输入访问口令", "need_login": True},
+        status_code=401,
+    )
+
 
 app.add_middleware(
     CORSMiddleware,

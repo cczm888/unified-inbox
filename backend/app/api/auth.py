@@ -15,12 +15,13 @@ import logging
 import secrets
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..db import get_session
+from ..security import COOKIE_NAME, check_password, login_page, make_token
 from ..services import accounts, feishu_user
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,43 @@ FEISHU_AUTHORIZE = "https://accounts.feishu.cn/open-apis/authen/v1/authorize"
 
 # 防 CSRF 的 state（单实例内存即可；多副本部署时应放 Redis）
 _states: set[str] = set()
+
+
+# ---------------- 访问口令（不是平台授权，是"能不能进这个网页"）----------------
+
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_form():
+    """登录页。口令没配置时直接跳首页，别让人卡在一个没用的表单上。"""
+    if not settings.auth_required:
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(login_page())
+
+
+@router.post("/login")
+async def login_submit(request: Request):
+    form = await request.form()
+    password = str(form.get("password") or "")
+    if not check_password(password):
+        log.warning("登录失败：口令不对（来源 %s）", request.client.host if request.client else "?")
+        return HTMLResponse(login_page("口令不对，再试一次。"), status_code=401)
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie(
+        COOKIE_NAME,
+        make_token(),
+        max_age=max(1, settings.access_cookie_days) * 86400,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return resp
+
+
+@router.post("/logout")
+async def logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(COOKIE_NAME, path="/")
+    return resp
 
 
 def _account_out(a) -> dict:

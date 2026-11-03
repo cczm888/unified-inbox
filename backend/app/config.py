@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     sla_minutes: int = 15          # 超时未处理则升级提醒
     inbox_page_size: int = 50
 
+    # ---- 访问控制 ----
+    # 这个系统里装的是"一个人所有平台的消息"，一旦监听 0.0.0.0 或开公网隧道，
+    # 任何拿到地址的人都能看到全部内容、还能以你的身份发消息。
+    # 设了 access_password 就启用登录校验；留空 = 不校验（只适合纯本机演示）。
+    access_password: str = ""
+    access_cookie_days: int = 7
+
     # ---- 用户身份接入（OAuth）----
     # 应用身份只能收到"机器人参与"的消息；用户身份能看到这个人在平台里
     # 能看到的一切（自己加入的群 + 全部单聊 + 历史消息）。两者共存，按账号区分。
@@ -78,6 +85,11 @@ class Settings(BaseSettings):
     @property
     def token_encryption_ready(self) -> bool:
         return bool(self.secret_key and self.secret_key != "dev-only-change-me-in-env")
+
+    @property
+    def auth_required(self) -> bool:
+        """设了访问口令才启用登录校验。"""
+        return bool(self.access_password)
 
     @property
     def telegram_user_ready(self) -> bool:

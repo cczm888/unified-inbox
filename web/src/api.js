@@ -1,11 +1,24 @@
 // 统一的 API 客户端。生产部署时前端与后端同源（nginx 反代 /api），无需配置 baseURL。
 const BASE = ''
 
+// 未登录时后端返回 401 + need_login。这里直接跳登录页 ——
+// 让用户对着一个空页面猜「是不是服务挂了」是最糟的体验。
+let _redirecting = false
+function goLogin() {
+  if (_redirecting) return
+  _redirecting = true
+  window.location.href = '/api/v1/auth/login'
+}
+
 async function request(path, options = {}) {
   const resp = await fetch(BASE + path, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })
+  if (resp.status === 401) {
+    goLogin()
+    throw new Error('未登录')
+  }
   if (!resp.ok) {
     let detail = resp.statusText
     try {
