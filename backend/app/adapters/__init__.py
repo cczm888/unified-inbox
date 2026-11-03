@@ -77,52 +77,64 @@ class AdapterRegistry:
 registry = AdapterRegistry()
 
 
-def build_registry(on_inbound: InboundCallback) -> AdapterRegistry:
-    """根据配置装配适配器。没配置凭证的平台直接不注册，前端也就不会显示空壳。"""
-    registry._items.clear()
+def build_from_settings(platform: str, on_inbound: InboundCallback) -> BaseAdapter | None:
+    """按 .env 配置造一个适配器；该平台没配凭证就返回 None。
 
-    if settings.feishu_ready:
-        registry.register(FeishuAdapter(settings.feishu_app_id, settings.feishu_app_secret, on_inbound))
-    else:
-        log.warning("飞书未配置（FEISHU_APP_ID / FEISHU_APP_SECRET 为空），跳过")
+    单独抽出来，是因为「界面上停用 .env 平台」之后要能重新启用 —— 它的凭证
+    不在数据库里（在 .env），只能从配置重建。
+    """
+    if platform == "feishu":
+        if not settings.feishu_ready:
+            return None
+        return FeishuAdapter(settings.feishu_app_id, settings.feishu_app_secret, on_inbound)
 
-    if settings.dingtalk_ready:
-        registry.register(
-            DingTalkAdapter(
-                settings.dingtalk_client_id,
-                settings.dingtalk_client_secret,
-                settings.dingtalk_robot_code,
-                on_inbound,
-            )
+    if platform == "dingtalk":
+        if not settings.dingtalk_ready:
+            return None
+        return DingTalkAdapter(
+            settings.dingtalk_client_id,
+            settings.dingtalk_client_secret,
+            settings.dingtalk_robot_code,
+            on_inbound,
         )
-    else:
-        log.warning("钉钉未配置（DINGTALK_CLIENT_ID / SECRET 为空），跳过")
 
-    if settings.telegram_ready:
-        registry.register(TelegramAdapter(settings.telegram_bot_token, on_inbound))
-    else:
-        log.warning("Telegram 未配置（TELEGRAM_BOT_TOKEN 为空），跳过")
+    if platform == "telegram":
+        if not settings.telegram_ready:
+            return None
+        return TelegramAdapter(settings.telegram_bot_token, on_inbound)
 
-    if settings.email_ready:
+    if platform == "email":
+        if not settings.email_ready:
+            return None
         guess_imap, guess_smtp = _guess_mail_hosts(settings.email_address)
         imap_host = settings.email_imap_host or guess_imap
         smtp_host = settings.email_smtp_host or guess_smtp
         log.info("邮箱接入：%s via %s / %s", settings.email_address, imap_host, smtp_host)
-        registry.register(
-            MailAdapter(
-                settings.email_address,
-                settings.email_password,
-                imap_host,
-                smtp_host,
-                on_inbound,
-                imap_port=settings.email_imap_port,
-                smtp_port=settings.email_smtp_port,
-                poll_seconds=settings.email_poll_seconds,
-                mark_seen=settings.email_mark_seen,
-                use_ssl_smtp=settings.email_smtp_port != 587,
-            )
+        return MailAdapter(
+            settings.email_address,
+            settings.email_password,
+            imap_host,
+            smtp_host,
+            on_inbound,
+            imap_port=settings.email_imap_port,
+            smtp_port=settings.email_smtp_port,
+            poll_seconds=settings.email_poll_seconds,
+            mark_seen=settings.email_mark_seen,
+            use_ssl_smtp=settings.email_smtp_port != 587,
         )
-    else:
-        log.warning("邮箱未配置（EMAIL_ADDRESS / EMAIL_PASSWORD 为空），跳过")
+
+    return None
+
+
+def build_registry(on_inbound: InboundCallback) -> AdapterRegistry:
+    """根据配置装配适配器。没配置凭证的平台直接不注册，前端也就不会显示空壳。"""
+    registry._items.clear()
+
+    for platform in ("feishu", "dingtalk", "telegram", "email"):
+        adapter = build_from_settings(platform, on_inbound)
+        if adapter is None:
+            log.warning("%s 未配置（.env 里缺凭证），跳过", platform)
+            continue
+        registry.register(adapter)
 
     return registry

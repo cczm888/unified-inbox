@@ -1117,7 +1117,7 @@ onBeforeUnmount(() => {
       <div v-if="!savedPlats.length" class="acc-empty">
         还没有接入任何平台。下面填一次凭证就会出现在这里，重启后自动恢复。
       </div>
-      <div v-for="s in savedPlats" :key="s.id" class="saved-card">
+      <div v-for="(s, i) in savedPlats" :key="s.platform + '-' + i" class="saved-card">
         <div class="saved-row">
           <span class="st-pill plat-pill">{{ PLATFORM_LABEL[s.platform] || s.platform }}</span>
           <span class="saved-label" :title="s.label || s.app_id">{{ s.label || s.app_id }}</span>
@@ -1129,6 +1129,7 @@ onBeforeUnmount(() => {
           >
             {{ s.status === 'active' ? '已连接' : s.status === 'disabled' ? '已停用' : '异常' }}
           </span>
+          <!-- 库里没有密文的是 .env 占位记录：重新启用会从配置重建 -->
           <a-button
             v-if="s.status !== 'active'"
             size="small"
@@ -1147,12 +1148,18 @@ onBeforeUnmount(() => {
             <a-button size="small" type="text">停用</a-button>
           </a-popconfirm>
           <a-popconfirm
-            title="彻底删除？加密凭证会一起抹掉，下次要重新去平台后台拿授权码"
-            ok-text="删除"
+            :title="
+              s.source === 'env'
+                ? '删掉这条停用/启用记录？等于恢复 .env 里的默认配置（下次启动照 .env 走）'
+                : '彻底删除？加密凭证会一起抹掉，下次要重新去平台后台拿授权码'
+            "
+            :ok-text="s.source === 'env' ? '恢复默认' : '删除'"
             cancel-text="算了"
             @confirm="purgeSaved(s)"
           >
-            <a-button size="small" type="text" danger>删除</a-button>
+            <a-button size="small" type="text" danger>
+              {{ s.source === 'env' ? '恢复默认' : '删除' }}
+            </a-button>
           </a-popconfirm>
         </div>
       </div>
@@ -1977,6 +1984,7 @@ onBeforeUnmount(() => {
 .saved-status.is-ok { color: var(--green); }
 .saved-status.is-idle { color: var(--t3); }
 .saved-status.is-bad { color: var(--red); }
+.saved-hint { font-size: 12px; color: var(--t3); flex: none; }
 .quote-bar {
   display: flex;
   align-items: baseline;

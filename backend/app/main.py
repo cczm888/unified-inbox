@@ -36,9 +36,14 @@ async def lifespan(app: FastAPI):
 
     await init_db()
     await outbox.recover_stale()
-    # 1) .env 里的凭证先兜底装配；2) 再把界面上保存过的平台读出来热启动（DB 优先）
+    # 1) .env 里的凭证先兜底装配；2) 剔除界面上被停用过的；3) 再热启动界面上接入的（DB 优先）
     build_registry(inbound.handle_inbound)
     platform_svc.set_inbound(inbound.handle_inbound)
+    try:
+        async with SessionLocal() as session:
+            await platform_svc.apply_disabled(session)
+    except Exception:
+        log.exception("读取停用列表失败（.env 里的平台会照常启动）")
     await registry.start_all(inbound.handle_inbound)
     try:
         async with SessionLocal() as session:

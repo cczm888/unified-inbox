@@ -73,7 +73,8 @@ class PlatformAccount(Base):
     # 界面上"添加平台"时填的自由配置（邮箱的 imap_host / smtp_host / 端口 / 轮询间隔等）
     label: Mapped[str | None] = mapped_column(String(128))     # 给人看的名字，如 abc@qq.com
     extra: Mapped[dict | None] = mapped_column(JSON_TYPE)
-    status: Mapped[str] = mapped_column(String(16), default="active")
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active/disabled/error
+    last_error: Mapped[str | None] = mapped_column(Text)  # 最近一次启动失败的原因，界面上直接显示
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), server_default=func.now())
 
     __table_args__ = (UniqueConstraint("platform", "app_id", name="uq_account_platform_app"),)

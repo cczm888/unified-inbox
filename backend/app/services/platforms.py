@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..adapters import AdapterRegistry, registry
+from ..adapters import AdapterRegistry, build_from_settings, registry
 from ..adapters.base import InboundCallback
 from ..adapters.mail import MailAdapter
 from ..config import settings
@@ -197,8 +197,19 @@ async def disconnect(session: AsyncSession, platform: str, *, purge: bool = Fals
         return {"ok": True, "platform": platform, "purged": True, "found": row is not None}
 
     if row is None:
+        # .env 里配的平台在库里没有记录，也要能停用：补一条 disabled 占位，
+        # 否则用户在界面上根本关不掉它（列表里看不见，就一直连着）。
+        label = getattr(adapter, "display_name", None) if adapter is not None else None
+        session.add(
+            PlatformAccount(
+                platform=platform,
+                app_id="",
+                label=label or platform,
+                status="disabled",
+            )
+        )
         await session.commit()
-        return {"ok": True, "platform": platform, "purged": False, "found": False}
+        return {"ok": True, "platform": platform, "purged": False, "found": True, "from_env": True}
 
     row.status = "disabled"
     row.last_error = None
@@ -206,68 +217,142 @@ async def disconnect(session: AsyncSession, platform: str, *, purge: bool = Fals
     return {"ok": True, "platform": platform, "purged": False, "found": True}
 
 
+async def apply_disabled(session: AsyncSession) -> int:
+    """把界面上停用过的平台，从已装配的适配器里剔掉。
+
+    必须在 registry.start_all() 之前调用：这样 .env 里配了凭证、但用户在界面上
+    按过「停用」的平台，重启后不会又自己连上 —— 否则「停用」按钮重启即失效。
+    """
+    rows = (
+        await session.execute(select(PlatformAccount).where(PlatformAccount.status == "disabled"))
+    ).scalars().all()
+    removed = 0
+    for row in rows:
+        adapter = registry.get(row.platform)
+        if adapter is not None:
+            try:
+                await adapter.stop()
+            except Exception:
+                pass
+            registry._items.pop(row.platform, None)
+            removed += 1
+            log.info("[%s] 界面上已停用，本次不启动", row.platform)
+    return removed
+
+
 async def enable(session: AsyncSession, platform: str) -> dict:
-    """把之前停用的平台重新拉起来（凭证还在，不用重新填）。"""
+    """把之前停用的平台重新拉起来。
+
+    两条来源：
+    - 界面上填凭证接入的（库里存着密文）→ 解密重建；
+    - .env 里配的（库里只有一条 disabled 占位，没有密文）→ 从配置重建，
+      成功就把占位记录删掉，回到「.env 默认启用」的状态。
+    """
     if _on_inbound is None:
         return {"ok": False, "platform": platform, "error": "服务未就绪"}
     row = (
         await session.execute(select(PlatformAccount).where(PlatformAccount.platform == platform))
     ).scalars().first()
-    if row is None:
-        return {"ok": False, "platform": platform, "error": "没有这个平台的接入记录，请重新填写凭证"}
-    secret = crypto.decrypt(row.app_secret_enc or "")
-    if not secret:
-        return {"ok": False, "platform": platform, "error": "库里的凭证解不开（SECRET_KEY 变过？），请重新填写"}
 
-    adapter = build_adapter(row.platform, row.app_id or "", secret, row.extra or {}, _on_inbound)
-    if adapter is None:
-        return {"ok": False, "platform": platform, "error": "不支持的平台"}
+    secret = crypto.decrypt(row.app_secret_enc or "") if row is not None else None
+    from_env = not secret
 
-    old = registry.get(row.platform)
+    if from_env:
+        adapter = build_from_settings(platform, _on_inbound)
+        if adapter is None:
+            return {
+                "ok": False,
+                "platform": platform,
+                "error": "这个平台是 .env 配置的，但 .env 里没有可用凭证，请改 .env 或重新填写",
+            }
+    else:
+        adapter = build_adapter(platform, row.app_id or "", secret, row.extra or {}, _on_inbound)
+        if adapter is None:
+            return {"ok": False, "platform": platform, "error": "不支持的平台"}
+
+    old = registry.get(platform)
     if old is not None:
         try:
             await old.stop()
         except Exception:
             pass
-        registry._items.pop(row.platform, None)
+        registry._items.pop(platform, None)
 
     registry.register(adapter)
     try:
         await adapter.start()
     except Exception as exc:
         log.exception("[%s] 重新启用失败", platform)
-        row.status = "error"
-        row.last_error = str(exc)[:500]
-        await session.commit()
+        if row is not None:
+            row.status = "error"
+            row.last_error = str(exc)[:500]
+            await session.commit()
         return {"ok": False, "platform": platform, "error": str(exc)}
 
     if adapter.ready:
-        row.status = "active"
-        row.last_error = None
+        if from_env:
+            # .env 平台重新启用成功：把停用占位记录删掉，回到「配置文件默认启用」状态
+            if row is not None:
+                await session.execute(
+                    delete(PlatformAccount).where(PlatformAccount.platform == platform)
+                )
+        else:
+            row.status = "active"
+            row.last_error = None
         await session.commit()
-        return {"ok": True, "platform": platform, "ready": True, "error": None}
+        return {"ok": True, "platform": platform, "ready": True, "error": None, "from_env": from_env}
 
-    row.status = "error"
-    row.last_error = (adapter.last_error or "启动失败")[:500]
-    await session.commit()
+    if row is not None:
+        row.status = "error"
+        row.last_error = (adapter.last_error or "启动失败")[:500]
+        await session.commit()
     return {"ok": False, "platform": platform, "error": adapter.last_error or "启动失败"}
 
 
 async def list_saved(session: AsyncSession) -> list[dict]:
+    """已接入的平台。
+
+    除了库里存过的（界面上填凭证接入的），也把 .env 里配好的平台列出来 ——
+    否则用户会看到一个「在线」的飞书，却在界面上找不到它、也关不掉它。
+    这类条目标 source="env"，只能停用，没有凭证可以「重新启用」（重新启用走 .env）。
+    """
     rows = (await session.execute(select(PlatformAccount).order_by(PlatformAccount.id))).scalars().all()
-    return [
+    out = [
         {
             "id": r.id,
             "platform": r.platform,
             "label": r.label or r.app_id,
             "app_id": r.app_id,
             "status": r.status,
+            # 库里没有密文 → 这条是 .env 平台的占位记录（停用/启用状态标记）
+            "source": "env" if not r.app_secret_enc else "ui",
             "extra": r.extra or {},
+            "last_error": r.last_error,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "live": (registry.get(r.platform) is not None and registry.get(r.platform).ready),
         }
         for r in rows
     ]
+
+    seen = {r.platform for r in rows}
+    for adapter in registry.all():
+        if adapter.platform in seen:
+            continue
+        out.append(
+            {
+                "id": None,
+                "platform": adapter.platform,
+                "label": f"{adapter.display_name}（.env 配置）",
+                "app_id": "",
+                "status": "active" if adapter.ready else "error",
+                "source": "env",
+                "extra": {},
+                "last_error": adapter.last_error,
+                "created_at": None,
+                "live": adapter.ready,
+            }
+        )
+    return out
 
 
 async def load_saved(session: AsyncSession) -> int:

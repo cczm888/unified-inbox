@@ -85,11 +85,14 @@ async def _ensure_columns(conn) -> None:
             await conn.execute(text("ALTER TABLE platform_account ADD COLUMN label VARCHAR(128)"))
         if "extra" not in acc_cols:
             await conn.execute(text("ALTER TABLE platform_account ADD COLUMN extra JSON"))
+        if "last_error" not in acc_cols:
+            await conn.execute(text("ALTER TABLE platform_account ADD COLUMN last_error TEXT"))
     else:
         await conn.execute(text("ALTER TABLE message ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE message ADD COLUMN IF NOT EXISTS account_id BIGINT"))
         await conn.execute(text("ALTER TABLE platform_account ADD COLUMN IF NOT EXISTS label VARCHAR(128)"))
         await conn.execute(text("ALTER TABLE platform_account ADD COLUMN IF NOT EXISTS extra JSONB"))
+        await conn.execute(text("ALTER TABLE platform_account ADD COLUMN IF NOT EXISTS last_error TEXT"))
 
 
 async def close_all() -> None:
