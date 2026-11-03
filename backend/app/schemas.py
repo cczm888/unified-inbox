@@ -8,6 +8,11 @@ from pydantic import BaseModel, Field
 
 class ReplyIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    # 引用回复：指向被引用那条消息的 id。
+    # 各平台对「原生引用」的支持不一样（飞书要发 post/reply 接口、邮件靠 In-Reply-To、
+    # Telegram 要 reply_to_message_id），所以统一层用「引用块 + 正文」的文本形式，
+    # 保证同一句话在哪个平台都长一样、都能读到上下文。
+    quote_id: int | None = None
 
 
 class TodoIn(BaseModel):
@@ -84,7 +89,9 @@ class MessageOut(BaseModel):
     sender_id: str | None = None
     msg_type: str
     text: str | None = None
-    attachments: list = []
+    # 库里这一列可能是 NULL（老消息、出站文本消息），不能强制成 list，
+    # 否则 Pydantic 会拿 None 去校验 list 直接 500。
+    attachments: list | None = None
     direction: str
     status: str
     priority: str

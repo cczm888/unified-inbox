@@ -37,8 +37,12 @@ export const api = {
     request(`/api/v1/platforms/${platform}/connect`, { method: 'DELETE' }),
   threads: (params) => request('/api/v1/inbox/threads' + qs(params)),
   messages: (params) => request('/api/v1/inbox' + qs(params)),
-  reply: (id, text) =>
-    request(`/api/v1/inbox/${id}/reply`, { method: 'POST', body: JSON.stringify({ text }) }),
+  // quoteId：引用回复时传被引用消息的 id，后端会把它拼成引用块带到对方平台
+  reply: (id, text, quoteId = null) =>
+    request(`/api/v1/inbox/${id}/reply`, {
+      method: 'POST',
+      body: JSON.stringify(quoteId ? { text, quote_id: quoteId } : { text }),
+    }),
   // 从统一入口给对方发文件（multipart，不能用 request 的 JSON 头）
   replyFile: async (id, file) => {
     const fd = new FormData()

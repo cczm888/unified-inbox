@@ -1,4 +1,4 @@
-"""出站投递 worker（Outbox 模式）。
+﻿"""出站投递 worker（Outbox 模式）。
 
 为什么不在 HTTP 请求里直接调平台 SDK：
   * 平台 429/超时不会把用户的回复请求拖死；
@@ -184,19 +184,29 @@ async def _mark_sent(row: dict, platform_msg_id: str | None) -> None:
         payload = row["payload"] or {}
         if payload.get("kind") in ("text", "status", "file"):
             body = payload.get("text")
-            if not body and payload.get("kind") == "file":
+            attachments = []
+            if payload.get("kind") == "file":
+                path = payload.get("path") or ""
                 # 只显示文件名：路径是服务器内部细节，不该出现在对话里
-                name = os.path.basename(payload.get("path") or "") or "文件"
+                name = os.path.basename(path) or "文件"
                 # 去掉上传时加的 8 位随机前缀
                 name = re.sub(r"^[0-9a-f]{8}_", "", name)
                 body = f"[文件] {name}"
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    size = 0
+                # 记一份 attachments：这样自己发出的文件在网页里也是一个可预览/下载的卡片，
+                # 和对方发来的文件长得一样（原来只有一行 "[文件] xxx" 的纯文本）。
+                attachments = [{"kind": "file", "name": name, "size": size, "path": path}]
             session.add(
                 Message(
                     platform=row["platform"],
                     platform_msg_id=f"outbox:{row['id']}",
                     chat_id=row["target_chat"],
                     msg_type="file" if payload.get("kind") == "file" else "text",
-                    text_body=body or "",
+                    text_body="" if attachments else (body or ""),
+                    attachments=attachments or None,
                     direction="out",
                     status="sent",
                     raw={"outbox_id": row["id"]},

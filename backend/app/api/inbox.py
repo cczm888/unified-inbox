@@ -5,6 +5,7 @@ import asyncio
 import io
 import json
 import logging
+import mimetypes
 import pathlib
 import re
 import uuid
@@ -50,6 +51,29 @@ def extract_meta(msg: Message) -> dict:
     if msg.platform == "dingtalk":
         return {"session_webhook": raw.get("sessionWebhook")}
     return {}
+
+
+def _quote_snippet(msg: Message, limit: int = 80) -> str:
+    """把一条消息压成一行引用文字。"""
+    text = (msg.text or "").strip()
+    if not text:
+        atts = list(msg.attachments or [])
+        if atts:
+            name = atts[0].get("name") or "附件"
+            text = f"[{'图片' if atts[0].get('kind') == 'image' else '文件'}] {name}"
+        else:
+            text = "（无文字内容）"
+    text = " ".join(text.split())
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
+async def _quote_prefix(session: AsyncSession, quote_id: int) -> str:
+    """生成引用块。用「」包住并在末尾加冒号，各平台都是纯文本，不会变形。"""
+    q = await session.get(Message, quote_id)
+    if q is None:
+        return ""
+    who = "我" if q.direction == "out" else (q.sender_name or "对方")
+    return f"「引用 {who}：{_quote_snippet(q)}」"
 
 
 @router.get("/inbox", response_model=list[MessageOut])
@@ -312,6 +336,27 @@ async def get_attachment(
         raise HTTPException(404, "附件不存在")
     att = atts[index]
 
+    disposition = "attachment" if download else "inline"
+
+    # 出站消息（我们自己发出去的文件）：原始文件就在本机 uploads/ 下，直接读。
+    # 平台侧没有"取回我刚发出去的文件"这种接口，绕一圈反而会失败。
+    local = att.get("path")
+    if local:
+        p = pathlib.Path(local)
+        if not p.is_file():
+            raise HTTPException(404, "本地文件已不存在（可能已被清理）")
+        data = p.read_bytes()
+        mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type=mime,
+            headers={
+                "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(att.get('name') or p.name)}",
+                "Content-Length": str(len(data)),
+                "Cache-Control": "private, max-age=3600",
+            },
+        )
+
     adapter = registry.get(msg.platform)
     if adapter is None:
         raise HTTPException(503, f"{msg.platform} 当前未启用，无法取回附件")
@@ -320,7 +365,6 @@ async def get_attachment(
     if blob is None:
         raise HTTPException(502, "附件下载失败（平台侧可能已过期或权限不足）")
 
-    disposition = "attachment" if download else "inline"
     return StreamingResponse(
         io.BytesIO(blob.data),
         media_type=blob.mime,
@@ -343,7 +387,14 @@ async def reply_to_message(
     if msg is None:
         raise HTTPException(404, "消息不存在")
 
-    payload = outbox.payload_text(body.text, extract_meta(msg))
+    text = body.text
+    quote_text = ""
+    if body.quote_id:
+        quote_text = await _quote_prefix(session, body.quote_id)
+        if quote_text:
+            text = f"{quote_text}\n\n{body.text}"
+
+    payload = outbox.payload_text(text, extract_meta(msg))
     outbox_id = await outbox.enqueue(
         session,
         platform=msg.platform,

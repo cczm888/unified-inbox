@@ -47,6 +47,8 @@ const activePlatform = ref(undefined)
 const activeThread = ref(null)
 const selected = ref(null)
 const replyText = ref('')
+// 当前正在引用哪条消息（null = 不引用）
+const quoting = ref(null)
 const aiText = ref('')
 const loading = ref(false)
 const sending = ref(false)
@@ -605,9 +607,19 @@ async function sendReply() {
   if (!selected.value || !replyText.value.trim() || sending.value) return
   sending.value = true
   try {
-    const res = await api.reply(selected.value.id, replyText.value.trim())
-    notify(() => antMessage.success(`已发送到${PLATFORM_LABEL[res.platform] || res.platform}`), '已发送')
+    const qid = quoting.value ? quoting.value.id : null
+    const res = await api.reply(selected.value.id, replyText.value.trim(), qid)
+    notify(
+      () =>
+        antMessage.success(
+          qid
+            ? `已带引用发送到${PLATFORM_LABEL[res.platform] || res.platform}`
+            : `已发送到${PLATFORM_LABEL[res.platform] || res.platform}`,
+        ),
+      '已发送',
+    )
     replyText.value = ''
+    quoting.value = null
     await loadMessages()
     await loadThreads()
     await loadStats()
@@ -617,6 +629,31 @@ async function sendReply() {
   } finally {
     sending.value = false
   }
+}
+
+// 引用：点气泡上的「引用」把那条挂到输入框上方，发出去时后端拼成引用块。
+// 不默认开着，是因为多数回复不需要引用——每次都要多按一个 × 反而烦。
+function startQuote(m) {
+  if (!m) return
+  quoting.value = m
+  nextTick(() => {
+    const el = document.querySelector('.reply-box textarea')
+    if (el) el.focus()
+  })
+}
+
+function cancelQuote() {
+  quoting.value = null
+}
+
+// 引用条上显示的一行摘要（和前端气泡里的显示一致）
+function quoteBrief(m) {
+  if (!m) return ''
+  const t = (m.text || '').trim()
+  if (t) return t.length > 60 ? t.slice(0, 60) + '…' : t
+  const a = (m.attachments || [])[0]
+  if (a) return (a.kind === 'image' ? '[图片] ' : '[文件] ') + (a.name || '附件')
+  return '（无文字内容）'
 }
 
 async function makeTodo() {
@@ -1282,8 +1319,12 @@ onBeforeUnmount(() => {
                   class="urgent-pill"
                   title="点 × 取消紧急标记"
                 >紧急<i class="up-x" @click.stop="clearPriority(row.m)">×</i></span>
+                <button class="quote-btn" title="引用这条再回复" @click.stop="startQuote(row.m)">引用</button>
               </div>
-              <div class="msg-text">{{ row.m.text || '（非文本消息）' }}</div>
+              <div v-if="row.m.text" class="msg-text">{{ row.m.text }}</div>
+              <div v-else-if="!row.m.attachments || !row.m.attachments.length" class="msg-text faint">
+                （非文本消息）
+              </div>
               <div v-if="row.m.attachments && row.m.attachments.length" class="att-list" @click.stop>
                 <template v-for="(a, i) in row.m.attachments" :key="i">
                   <a
@@ -1390,11 +1431,17 @@ onBeforeUnmount(() => {
                   <span class="sec-title">回复</span>
                   <span class="sec-hint">Ctrl + Enter 直接发</span>
                 </div>
+                <div v-if="quoting" class="quote-bar">
+                  <span class="quote-mark">引用</span>
+                  <span class="quote-who">{{ quoting.direction === 'out' ? '我' : quoting.sender_name || '对方' }}</span>
+                  <span class="quote-txt">{{ quoteBrief(quoting) }}</span>
+                  <button class="quote-close" title="取消引用" @click="cancelQuote">×</button>
+                </div>
                 <a-textarea
                   v-model:value="replyText"
                   :rows="4"
                   class="reply-box"
-                  placeholder="打字回复，会直接发到对方所用平台…"
+                  :placeholder="quoting ? '针对上面这条回复…' : '打字回复，会直接发到对方所用平台…'"
                 />
                 <div class="btn-row">
                   <a-button type="primary" :loading="sending" @click="sendReply">发送</a-button>
@@ -1780,6 +1827,53 @@ onBeforeUnmount(() => {
 .bulk-clear:hover { color: var(--brand); }
 
 /* 附件 */
+.quote-btn {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--t3);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.bubble:hover .quote-btn { opacity: 1; }
+.quote-btn:hover { color: var(--brand); }
+.quote-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  background: var(--sub);
+  border-left: 2px solid var(--brand-line);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.quote-mark { color: var(--brand); flex: none; }
+.quote-who { color: var(--t2); flex: none; }
+.quote-txt {
+  color: var(--t3);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quote-close {
+  border: 0;
+  background: transparent;
+  color: var(--t3);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  flex: none;
+}
+.quote-close:hover { color: var(--red); }
+.msg-text.faint { color: var(--t3); font-size: 12px; }
 .att-list { margin-top: 9px; display: flex; flex-direction: column; gap: 8px; }
 .att-img-wrap { display: inline-block; line-height: 0; }
 .att-img {
