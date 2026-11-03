@@ -1175,10 +1175,12 @@ onBeforeUnmount(() => {
           >
             <a-button size="small" type="text">停用</a-button>
           </a-popconfirm>
+          <!-- 已连接时不显示删除：那时能做的只有「停用」，删除留给停用之后 -->
           <a-popconfirm
+            v-if="s.status !== 'active'"
             :title="
               s.source === 'env'
-                ? '删掉这条停用/启用记录？等于恢复 .env 里的默认配置（下次启动照 .env 走）'
+                ? '删掉这条停用记录？等于恢复 .env 里的默认配置（下次启动照 .env 走）'
                 : '彻底删除？加密凭证会一起抹掉，下次要重新去平台后台拿授权码'
             "
             :ok-text="s.source === 'env' ? '恢复默认' : '删除'"

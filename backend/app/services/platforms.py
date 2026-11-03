@@ -342,7 +342,8 @@ async def list_saved(session: AsyncSession) -> list[dict]:
             {
                 "id": None,
                 "platform": adapter.platform,
-                "label": f"{adapter.display_name}（.env 配置）",
+                # 平台名前面已经用 pill 显示过一次，这里只说凭证来自哪
+                "label": ".env 配置",
                 "app_id": "",
                 "status": "active" if adapter.ready else "error",
                 "source": "env",
