@@ -40,3 +40,8 @@ backend/uploads/
 
 # 本地工具（cloudflared.exe 等，55MB 不该入库）
 .tools/
+
+# 多实例的独立配置（含口令）
+.env.*
+!.env.example
+logs/

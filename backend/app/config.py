@@ -1,15 +1,21 @@
 """集中配置：所有密钥只从环境变量读取，代码里零硬编码（架构评分 5 分的红线）。"""
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 一台机器上跑多个互不相干的实例时，用 UTI_ENV_FILE 指各自的配置文件；
+# 不设就读默认那两个（仓库根 .env → 当前目录 .env）。不隔离的话，
+# 第二个实例会读到第一个实例的 .env，把别人的飞书/邮箱也接进来。
+_ENV_FILE = os.getenv("UTI_ENV_FILE") or ("../.env", ".env")
 
 
 class Settings(BaseSettings):
     # 依次尝试：仓库根 .env（compose 用）→ 当前工作目录 .env（容器内/backend 下）
     model_config = SettingsConfigDict(
-        env_file=("../.env", ".env"),
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
