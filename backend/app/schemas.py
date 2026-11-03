@@ -28,6 +28,29 @@ class StatusIn(BaseModel):
     notify: bool = False
 
 
+class IngestItem(BaseModel):
+    """外部采集器推来的一条消息。
+
+    用于「平台没有可用的官方 API」或「官方 API 拿不到某类消息」时，
+    由外部脚本（浏览器采集器 / 导出解析器 / 第三方 webhook）把消息推进来。
+    """
+    platform_msg_id: str = Field(min_length=1, max_length=200)
+    chat_id: str = Field(min_length=1, max_length=200)
+    chat_name: str | None = Field(default=None, max_length=200)
+    sender_name: str | None = Field(default=None, max_length=200)
+    sender_id: str | None = Field(default=None, max_length=200)
+    text: str = Field(default="", max_length=20000)
+    created_at: datetime | None = None
+    direction: str = Field(default="in", pattern="^(in|out)$")
+
+
+class IngestIn(BaseModel):
+    platform: str = Field(min_length=1, max_length=32)
+    items: list[IngestItem] = Field(min_length=1, max_length=500)
+    # 采集器元信息：来源、采集时间、选择器版本等，原样存进 raw 便于排查
+    meta: dict | None = None
+
+
 class TodoStatusIn(BaseModel):
     status: str = Field(pattern="^(pending|in_progress|done|cancelled)$")
 

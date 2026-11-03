@@ -137,8 +137,22 @@ export function attachmentUrl(messageId, index, download = false) {
   return `${BASE}/api/v1/inbox/${messageId}/attachments/${index}${download ? '?download=true' : ''}`
 }
 
-export const PLATFORM_LABEL = { feishu: '飞书', dingtalk: '钉钉', telegram: 'Telegram', email: '邮箱' }
-export const PLATFORM_COLOR = { feishu: 'blue', dingtalk: 'geekblue', telegram: 'cyan', email: 'orange' }
+export const PLATFORM_LABEL = {
+  feishu: '飞书',
+  dingtalk: '钉钉',
+  telegram: 'Telegram',
+  email: '邮箱',
+  // 网页采集通道：平台没有开放 API 或 API 覆盖不到时的补充来源，
+  // 数据由外部采集器 POST /api/v1/ingest 推进来，不计入「官方 API 接入」的平台数
+  feishu_web: '飞书网页',
+}
+export const PLATFORM_COLOR = {
+  feishu: 'blue',
+  dingtalk: 'geekblue',
+  telegram: 'cyan',
+  email: 'orange',
+  feishu_web: 'default',
+}
 export const STATUS_LABEL = {
   received: '待处理',
   claimed: '处理中',

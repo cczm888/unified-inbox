@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .adapters import build_registry, registry
-from .api import auth, inbox, platforms, stats, todos
+from .api import auth, inbox, ingest, platforms, stats, todos
 from .config import settings
 from .db import SessionLocal, close_all, init_db
 from .security import COOKIE_NAME, is_authenticated, login_page
@@ -132,6 +132,7 @@ app.add_middleware(
 )
 
 app.include_router(inbox.router)
+app.include_router(ingest.router)
 app.include_router(todos.router)
 app.include_router(platforms.router)
 app.include_router(stats.router)

@@ -98,9 +98,34 @@ unified-inbox/
 │   ├── scripts/probe.py  平台连通性自检（拿凭证后先跑这个，无需 Docker）
 │   └── tests/            转换层单测（无需 DB/凭证）
 ├── web/                  Vue3 + ant-design-vue 收件箱
+├── scripts/              启动脚本 + 采集器（collect-feishu-web.mjs）
 ├── docs/                 初赛设计文档、可行性分析、接入操作指引
 └── docker-compose.yml    postgres + redis + api + web
 ```
+
+## 5.1 通用接入通道：`POST /api/v1/ingest`
+
+官方 API 覆盖不到的三种情况，不靠「往后端塞爬虫」解决，而是走这个接口：
+
+| 情况 | 例子 |
+|---|---|
+| 平台没有开放 API | — |
+| 官方 API 不提供某类数据 | 飞书 `im:message.*:get_as_user` 不向个人租户开放 |
+| 数据已经在别处 | 导出的 DOCX / CSV / 邮件归档 |
+
+采集器在**外部进程**里跑（浏览器自动化、导出解析、第三方 webhook），把结构化结果推过来：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/ingest \
+  -H "Content-Type: application/json" -b "uti_auth=<cookie>" \
+  -d '{"platform":"feishu_web","items":[{"platform_msg_id":"web:1","chat_id":"web:账号安全中心","chat_name":"账号安全中心","text":"..."}]}'
+```
+
+幂等：同 `(platform, platform_msg_id)` 重复推不会产生新行，采集器可以放心重跑。
+
+**定位声明**：本通道进来的数据**不计入**赛题「官方开放 API 或 Webhook 接入」的平台数量。它是补充通道，不是主链路；文档与演示必须如实标注来源（界面上「飞书网页」用灰色标签，与官方「飞书」的蓝色区分开）。
+
+已实现的采集器：`scripts/collect-feishu-web.mjs` —— 用 ego-browser 打开飞书网页版，按几何特征定位左栏会话项，逐个打开读 `.page-view-messenger-chat` 的文本，再 POST 上来。**已知限制**：会话内消息是整段文本（larklet 卡片组件内部结构读不到逐条粒度）、依赖前端 DOM 结构、需要浏览器登录态。
 
 ## 6. 本地开发（不用 Docker）
 

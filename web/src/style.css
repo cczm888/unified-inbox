@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    全局样式：设计 token + 基础组件类
    组件专属样式在 App.vue 的 <style scoped> 里
    ============================================================ */
@@ -39,12 +39,15 @@
   --p-email: #d98216;
   --p-telegram: #2aabee;
   --p-dingtalk: #1677ff;
+  /* 采集通道用中性灰：一眼能看出它不是官方 API 直连 */
+  --p-feishu_web: #8a94a6;
 }
 
 .p-feishu { --p: var(--p-feishu); }
 .p-email { --p: var(--p-email); }
 .p-telegram { --p: var(--p-telegram); }
 .p-dingtalk { --p: var(--p-dingtalk); }
+.p-feishu_web { --p: var(--p-feishu_web); }
 
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
