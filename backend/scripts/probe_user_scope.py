@@ -1,6 +1,11 @@
-"""用户身份还能做什么：多接口探测权限边界。"""
+"""用户身份还能做什么：多接口探测权限边界。
+
+CHAT_ID 不写死：从环境变量 FEISHU_TEST_CHAT_ID 读（或传第一个命令行参数）。
+仓库是公开的，任何看起来像标识符的字面量都会长期留在 git 历史里。
+"""
 import asyncio
 import json
+import os
 import sys
 
 import httpx
@@ -10,7 +15,7 @@ from app.db import SessionLocal  # noqa: E402
 from app.services import accounts  # noqa: E402
 
 BASE = "https://open.feishu.cn/open-apis"
-CHAT_ID = "oc_f27dc86d678be49541a0a213e6c23280"
+CHAT_ID = os.environ.get("FEISHU_TEST_CHAT_ID") or (sys.argv[1] if len(sys.argv) > 1 else "")
 
 
 async def probe(cli, token, name, method, path, **kw):
@@ -24,6 +29,10 @@ async def probe(cli, token, name, method, path, **kw):
 
 async def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if not CHAT_ID:
+        print("需要会话 ID：设环境变量 FEISHU_TEST_CHAT_ID=oc_xxx，或作为第一个参数传入。")
+        print("怎么拿：GET /open-apis/im/v1/chats 列出你加入的群；单聊 ID 可以从事件日志或消息事件包里抄。")
+        return
     async with SessionLocal() as session:
         acc = (await accounts.list_accounts(session))[0]
         token = await accounts.get_valid_token(session, acc)
