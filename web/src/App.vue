@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message as antMessage } from 'ant-design-vue'
 import dayjs from 'dayjs'
@@ -654,6 +654,18 @@ function quoteBrief(m) {
   const a = (m.attachments || [])[0]
   if (a) return (a.kind === 'image' ? '[图片] ' : '[文件] ') + (a.name || '附件')
   return '（无文字内容）'
+}
+
+// 把「引用块 + 正文」拆开显示：后端为了跨平台一致把引用压成了一行文本，
+// 界面上不该让它和正文混在一起——左边一条竖线隔开，才看得出哪句是被引用的。
+const _quoteCache = new Map()
+function parseQuote(m) {
+  if (_quoteCache.has(m.id)) return _quoteCache.get(m.id)
+  const t = m.text || ''
+  const hit = /^「引用([\s\S]*?)」\n\n?/.exec(t)
+  const res = hit ? { q: hit[1].trim(), b: t.slice(hit[0].length) } : { q: '', b: t }
+  _quoteCache.set(m.id, res)
+  return res
 }
 
 async function makeTodo() {
@@ -1321,7 +1333,8 @@ onBeforeUnmount(() => {
                 >紧急<i class="up-x" @click.stop="clearPriority(row.m)">×</i></span>
                 <button class="quote-btn" title="引用这条再回复" @click.stop="startQuote(row.m)">引用</button>
               </div>
-              <div v-if="row.m.text" class="msg-text">{{ row.m.text }}</div>
+              <div v-if="parseQuote(row.m).q" class="q-quote">{{ parseQuote(row.m).q }}</div>
+              <div v-if="parseQuote(row.m).b" class="msg-text">{{ parseQuote(row.m).b }}</div>
               <div v-else-if="!row.m.attachments || !row.m.attachments.length" class="msg-text faint">
                 （非文本消息）
               </div>
@@ -1827,6 +1840,17 @@ onBeforeUnmount(() => {
 .bulk-clear:hover { color: var(--brand); }
 
 /* 附件 */
+.q-quote {
+  border-left: 3px solid var(--brand-line);
+  background: rgba(47, 107, 255, 0.045);
+  color: var(--t2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 5px 9px;
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 7px;
+  word-break: break-word;
+}
 .quote-btn {
   margin-left: auto;
   border: 0;
