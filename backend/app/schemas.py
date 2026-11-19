@@ -149,3 +149,15 @@ class ThreadOut(BaseModel):
     pending: int
     unread: int = 0       # 还没看过的入站消息数
     urgent: int = 0       # 待处理里的紧急消息数（用于置顶）
+
+class NewMessageIn(BaseModel):
+    """从统一入口主动发起一条新消息（不是回复已有会话）。
+
+    赛题要求「选择联系人发送消息」，所以平台与目标都要显式给。
+    目标语义按平台不同：飞书/Telegram 是 chat_id，邮箱是收件人地址。
+    """
+
+    platform: str = Field(pattern="^(feishu|telegram|email|dingtalk)$")
+    target: str = Field(min_length=1, max_length=256)
+    text: str = Field(min_length=1, max_length=8000)
+    subject: str | None = Field(default=None, max_length=200)  # 仅邮箱用

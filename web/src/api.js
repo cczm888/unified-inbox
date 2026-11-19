@@ -168,3 +168,8 @@ export const STATUS_COLOR = {
   sent: 'blue',
 }
 export const PRIORITY_COLOR = { urgent: 'red', normal: 'default', low: 'default' }
+
+// 主动发起一条新消息（选联系人发，不是回复）
+export function sendNew(body) {
+  return request('/api/v1/inbox/send', { method: 'POST', body })
+}

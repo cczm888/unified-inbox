@@ -16,12 +16,21 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy import select
 
 from .adapters import build_registry, registry
 from .api import auth, inbox, ingest, platforms, stats, todos
 from .config import settings
 from .db import SessionLocal, close_all, init_db
-from .security import COOKIE_NAME, is_authenticated, login_page
+from .models import AppUser
+from .security import (
+    COOKIE_NAME,
+    has_user,
+    is_authenticated,
+    login_page,
+    register_page,
+    set_has_user,
+)
 from .services import accounts, inbound, outbox
 from .services import platforms as platform_svc
 
@@ -38,6 +47,15 @@ async def lifespan(app: FastAPI):
 
     await init_db()
     await outbox.recover_stale()
+    # 启动时判断系统里有没有账号：决定登录页是「登录」还是「创建账号」
+    try:
+        async with SessionLocal() as session:
+            first = (await session.execute(select(AppUser.id).limit(1))).first()
+            set_has_user(first is not None)
+            log.info("账号体系：%s", "已初始化" if first else "未初始化（首个访问者可注册）")
+    except Exception:
+        log.exception("检查账号表失败，按未初始化处理")
+        set_has_user(False)
     # 1) .env 里的凭证先兜底装配；2) 剔除界面上被停用过的；3) 再热启动界面上接入的（DB 优先）
     build_registry(inbound.handle_inbound)
     platform_svc.set_inbound(inbound.handle_inbound)
@@ -94,31 +112,59 @@ async def _token_watch(stop_event: asyncio.Event) -> None:
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
 
-# 免登录路径：健康检查（不含敏感数据）+ 登录页本身
-_PUBLIC_PATHS = {"/healthz", "/api/v1/auth/login", "/favicon.ico"}
+# 免登录路径：健康检查（不含敏感数据）+ 登录/注册页本身
+_PUBLIC_PATHS = {
+    "/healthz",
+    "/api/v1/auth/login",
+    "/api/v1/auth/register",
+    "/favicon.ico",
+}
+
+
+async def _known_usernames() -> list[str]:
+    """登录态校验要知道有哪些账号。账号数极少（单用户模式），每次查一次可接受。"""
+    try:
+        async with SessionLocal() as session:
+            rows = (await session.execute(select(AppUser.username))).scalars().all()
+            return list(rows)
+    except Exception:
+        log.warning("读取账号列表失败，登录态校验按无账号处理")
+        return []
 
 
 @app.middleware("http")
 async def access_guard(request: Request, call_next):
-    """访问口令校验。
+    """访问控制。
 
-    系统里是一个人所有平台的原始消息，监听 0.0.0.0 或开隧道后就是公开的。
-    只要 ACCESS_PASSWORD 非空，除登录页与健康检查外一律要求带 cookie。
+    三种模式（见 security.py 顶部说明）：
+    * 有账号 → 必须登录；
+    * 没账号但配了 ACCESS_PASSWORD → 认共享口令；
+    * 两者都没有 → 不校验（纯本机自用）。
+
+    系统里是一个人所有平台的原始消息，监听 0.0.0.0 或开隧道后就是公开的，
+    所以只要配置了任何一种保护，除登录/注册页与健康检查外一律要求带 cookie。
     """
-    if not settings.auth_required:
+    if not settings.auth_required and not has_user():
         return await call_next(request)
 
     path = request.url.path
     if path in _PUBLIC_PATHS:
         return await call_next(request)
-    if is_authenticated(request.cookies.get(COOKIE_NAME)):
+
+    cookie = request.cookies.get(COOKIE_NAME)
+    if is_authenticated(cookie, await _known_usernames()):
         return await call_next(request)
 
-    # 浏览器直接敲地址 → 给登录页；前端 fetch → 给 401 让 SPA 跳去登录
+    # 浏览器直接敲地址 → 给登录/注册页；前端 fetch → 给 401 让 SPA 跳去登录
+    page = login_page if has_user() else register_page
     if "text/html" in request.headers.get("accept", "") and not path.startswith("/api/"):
-        return HTMLResponse(login_page(), status_code=401)
+        return HTMLResponse(page(), status_code=401)
     return JSONResponse(
-        {"detail": "未登录：请访问 /api/v1/auth/login 输入访问口令", "need_login": True},
+        {
+            "detail": "未登录：请访问 /api/v1/auth/login 登录后再试",
+            "need_login": True,
+            "has_user": has_user(),
+        },
         status_code=401,
     )
 

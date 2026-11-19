@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import {
   api,
   attachmentUrl,
+  sendNew,
   PLATFORM_LABEL,
   PLATFORM_COLOR,
   STATUS_LABEL,
@@ -237,6 +238,74 @@ function backToList() {
   activeThread.value = null
   selected.value = null
   messages.value = []
+}
+
+// ---------------- 当前登录用户 ----------------
+const me = ref({ authenticated: false, username: null, via: null })
+
+async function loadMe() {
+  try {
+    const r = await fetch('/api/v1/auth/me', { credentials: 'same-origin' })
+    if (r.ok) me.value = await r.json()
+  } catch {
+    /* 拿不到就当作未登录，中间件会处理 */
+  }
+}
+
+async function doLogout() {
+  try {
+    await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'same-origin' })
+  } finally {
+    window.location.href = '/api/v1/auth/login'
+  }
+}
+
+// ---------------- 主动发起新消息（选联系人发）----------------
+const newMsgOpen = ref(false)
+const sendingNew = ref(false)
+const newMsg = reactive({ platform: 'feishu', target: '', text: '', subject: '' })
+
+// 可选目标 = 已有会话（省得让人背 chat_id），也允许手输
+const newMsgTargets = computed(() =>
+  threads.value
+    .filter((t) => t.platform === newMsg.platform)
+    .map((t) => ({ value: t.chat_id, label: t.chat_title || t.chat_id })),
+)
+
+function openNewMsg() {
+  newMsg.text = ''
+  newMsg.subject = ''
+  newMsg.target = ''
+  const first = platforms.value.find((p) => p.ready)
+  if (first) newMsg.platform = first.platform
+  newMsgOpen.value = true
+}
+
+async function doSendNew() {
+  if (!newMsg.target.trim() || !newMsg.text.trim()) {
+    antMessage.warning('联系人和内容都要填')
+    return
+  }
+  sendingNew.value = true
+  try {
+    const body = {
+      platform: newMsg.platform,
+      target: newMsg.target.trim(),
+      text: newMsg.text.trim(),
+    }
+    if (newMsg.platform === 'email' && newMsg.subject.trim()) body.subject = newMsg.subject.trim()
+    await sendNew(body)
+    antMessage.success('已投递，稍等几秒对方就能收到')
+    newMsgOpen.value = false
+    setTimeout(() => {
+      loadThreads()
+      loadStats()
+    }, 2500)
+  } catch (e) {
+    antMessage.error('发送失败：' + (e.message || e), 8)
+  } finally {
+    sendingNew.value = false
+  }
 }
 
 // ---------------- 用户身份账号（OAuth 接入） ----------------
@@ -1037,6 +1106,7 @@ watch(pendingTotal, (n, o) => {
 })
 
 onMounted(async () => {
+  await loadMe()
   await loadPlatforms()
   await Promise.all([loadThreads(), loadStats(), loadTodos()])
   primed.value = true
@@ -1083,10 +1153,23 @@ onBeforeUnmount(() => {
           <span class="metric" :class="pendingTotal ? 'm-orange' : 'm-idle'">待处理 <b>{{ pendingTotal }}</b></span>
         </div>
         <span class="vline"></span>
+        <button class="ghost-btn primary" @click="openNewMsg">
+          <span class="gb-ico">✉️</span>新消息
+        </button>
         <button class="ghost-btn" @click="openAccounts">
           <span class="gb-ico">👤</span>账号
           <span v-if="userAccounts.length" class="gb-badge">{{ userAccounts.length }}</span>
         </button>
+        <a-dropdown v-if="me.username">
+          <button class="ghost-btn">
+            <span class="me-dot"></span>{{ me.username }}
+          </button>
+          <template #overlay>
+            <a-menu>
+              <a-menu-item key="logout" @click="doLogout">退出登录</a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
         <a-tooltip v-if="canNotify" :title="notifyOn ? '桌面通知已开，点击关闭' : '收新消息时弹系统通知'">
           <button class="ghost-btn icon-only" :class="{ on: notifyOn }" @click="toggleNotify">
             {{ notifyOn ? '🔔' : '🔕' }}
@@ -1094,6 +1177,45 @@ onBeforeUnmount(() => {
         </a-tooltip>
       </div>
     </header>
+
+    <a-modal
+      v-model:open="newMsgOpen"
+      title="发起新消息"
+      :confirm-loading="sendingNew"
+      ok-text="发送"
+      cancel-text="取消"
+      @ok="doSendNew"
+    >
+      <div class="nm-form">
+        <div class="nm-row">
+          <label>平台</label>
+          <a-select v-model:value="newMsg.platform" size="small" style="width: 100%">
+            <a-select-option v-for="p in platforms" :key="p.platform" :value="p.platform" :disabled="!p.ready">
+              {{ PLATFORM_LABEL[p.platform] || p.platform }}{{ p.ready ? '' : '（未接入）' }}
+            </a-select-option>
+          </a-select>
+        </div>
+        <div class="nm-row">
+          <label>{{ newMsg.platform === 'email' ? '收件人' : '联系人' }}</label>
+          <a-auto-complete
+            v-model:value="newMsg.target"
+            :options="newMsgTargets"
+            size="small"
+            style="width: 100%"
+            :placeholder="newMsg.platform === 'email' ? 'someone@example.com' : '从已有会话里选，或直接粘 chat_id'"
+          />
+        </div>
+        <div v-if="newMsg.platform === 'email'" class="nm-row">
+          <label>主题</label>
+          <a-input v-model:value="newMsg.subject" size="small" placeholder="留空自动取正文首行" />
+        </div>
+        <div class="nm-row">
+          <label>内容</label>
+          <a-textarea v-model:value="newMsg.text" :rows="5" placeholder="要发出去的话…" />
+        </div>
+        <div class="nm-tip">发出后走 Outbox 投递，失败会自动重试；成功后这条会出现在收件箱里。</div>
+      </div>
+    </a-modal>
 
     <a-drawer
       v-model:open="accountsOpen"
@@ -1803,6 +1925,16 @@ onBeforeUnmount(() => {
 }
 .ghost-btn:hover { background: var(--hover); color: var(--t1); }
 .ghost-btn.on { color: var(--brand); background: var(--brand-weak); }
+.me-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green); display: inline-block; margin-right: 6px;
+}
+.ghost-btn.primary { color: #fff; background: var(--brand); border-color: transparent; }
+.ghost-btn.primary:hover { background: #1f5aeb; color: #fff; }
+.nm-form { display: flex; flex-direction: column; gap: 12px; }
+.nm-row { display: flex; flex-direction: column; gap: 5px; }
+.nm-row > label { font-size: 12px; color: var(--t2); }
+.nm-tip { font-size: 12px; color: var(--t3); line-height: 1.6; }
 .icon-only { font-size: 14px; padding: 0 9px; }
 .gb-ico { font-size: 13px; }
 .gb-badge {

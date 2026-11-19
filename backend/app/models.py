@@ -235,3 +235,30 @@ class Feedback(Base):
     old_value: Mapped[str | None] = mapped_column(String(256))
     new_value: Mapped[str | None] = mapped_column(String(256))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), server_default=func.now())
+
+
+class AppUser(Base):
+    """系统账号（不是平台账号，也不是 OAuth 的 UserAccount）。
+
+    为什么要有它
+    ------------
+    赛题要求的闭环是「用户注册 → 配置平台 → 查看消息列表 → 选联系人发消息 →
+    自动或人工回复」。原实现只有 .env 里一个共享访问口令，没有「注册」这个环节，
+    也没有"谁在用"的概念。
+
+    这里刻意做成**单用户模式**：第一个注册的人就是这个收件箱的主人，
+    之后再注册会被拒绝（409）。理由是数据模型里没有 owner 维，
+    真做多租户要动每一张表，而赛题要的是"注册"这个环节存在且可用。
+
+    口令用 PBKDF2-HMAC-SHA256（200k 轮 + 16 字节盐），
+    库里的字段形如 `pbkdf2_sha256$200000$<salt_hex>$<hash_hex>`。
+    """
+
+    __tablename__ = "app_user"
+
+    id: Mapped[int] = mapped_column(PK_BIGINT, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+    display_name: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), server_default=func.now())
+    last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime())

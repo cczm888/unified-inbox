@@ -25,12 +25,13 @@ from ..schemas import (
     BulkPriorityIn,
     BulkStatusIn,
     MessageOut,
+    NewMessageIn,
     PriorityIn,
     ReadIn,
     ReplyIn,
     StatusIn,
-    TodoIn,
     ThreadOut,
+    TodoIn,
 )
 from ..services import inbound, llm, outbox
 
@@ -642,3 +643,47 @@ async def event_stream(request: Request, since: str | None = None):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/inbox/send")
+async def send_new(
+    body: NewMessageIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """从统一入口主动发起一条新消息（选联系人发，不是回复）。
+
+    与 /reply 的区别：reply 挂在一条已收到的消息上，状态跟着那条消息走；
+    这里没有父消息，所以不产生 Message 行，只入 Outbox，发出后由 _mark_sent
+    补登一条 direction=out 的出站消息（这样收件箱里也能看到自己发出去的话）。
+    """
+    platform = body.platform
+    adapter = registry.get(platform)
+    if adapter is None:
+        raise HTTPException(status_code=400, detail=f"{platform} 当前未接入，请先在「账号」里接入")
+
+    target = body.target.strip()
+    if platform == "email" and "@" not in target:
+        raise HTTPException(status_code=400, detail="邮箱目标要填收件人地址，例如 someone@example.com")
+    if platform != "email" and not target:
+        raise HTTPException(status_code=400, detail="目标会话不能为空")
+
+    meta: dict = {}
+    if platform == "email" and body.subject:
+        meta["subject"] = body.subject
+
+    job_id = await outbox.enqueue(
+        session,
+        platform=platform,
+        target_chat=target,
+        payload=outbox.payload_text(body.text, meta or None),
+        parent_message_id=None,
+    )
+    await session.commit()
+    log.info("主动发送：%s -> %s（outbox #%s）", platform, target, job_id)
+    return {
+        "ok": True,
+        "outbox_id": job_id,
+        "platform": platform,
+        "target": target,
+        "status": "queued",
+    }

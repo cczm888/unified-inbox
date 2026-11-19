@@ -22,7 +22,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..db import get_session
-from ..security import COOKIE_NAME, check_password, login_page, make_token
+from ..security import (
+    COOKIE_NAME,
+    check_password,
+    is_password_token,
+    login_page,
+    make_token,
+    password_problem,
+    register_page,
+    username_problem,
+    verify_password,
+)
 from ..services import accounts, feishu_user
 
 log = logging.getLogger(__name__)
@@ -35,34 +45,156 @@ FEISHU_AUTHORIZE = "https://accounts.feishu.cn/open-apis/authen/v1/authorize"
 _states: set[str] = set()
 
 
-# ---------------- 访问口令（不是平台授权，是"能不能进这个网页"）----------------
+# ---------------- 账号：注册 / 登录 / 登出（不是平台授权，是"能不能进这个网页"）----------------
+
+
+async def _find_user(session: AsyncSession, username: str):
+    from sqlalchemy import select
+
+    from ..models import AppUser
+
+    return (
+        await session.execute(select(AppUser).where(AppUser.username == username))
+    ).scalar_one_or_none()
+
+
+async def _first_user(session: AsyncSession):
+    from sqlalchemy import select
+
+    from ..models import AppUser
+
+    return (await session.execute(select(AppUser).order_by(AppUser.id).limit(1))).scalars().first()
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_form():
-    """登录页。口令没配置时直接跳首页，别让人卡在一个没用的表单上。"""
-    if not settings.auth_required:
-        return RedirectResponse("/", status_code=303)
+async def login_form(session: AsyncSession = Depends(get_session)):
+    """有账号给登录页，没账号给注册页。"""
+    first = await _first_user(session)
+    from ..security import set_has_user
+
+    set_has_user(first is not None)
+    if first is None:
+        if not settings.auth_required:
+            return RedirectResponse("/", status_code=303)
+        return HTMLResponse(register_page())
     return HTMLResponse(login_page())
 
 
-@router.post("/login")
-async def login_submit(request: Request):
+@router.get("/register", response_class=HTMLResponse)
+async def register_form(session: AsyncSession = Depends(get_session)):
+    first = await _first_user(session)
+    if first is not None:
+        return RedirectResponse("/api/v1/auth/login", status_code=303)
+    return HTMLResponse(register_page())
+
+
+@router.post("/register")
+async def register_submit(request: Request, session: AsyncSession = Depends(get_session)):
     form = await request.form()
+    username = str(form.get("username") or "").strip()
     password = str(form.get("password") or "")
-    if not check_password(password):
-        log.warning("登录失败：口令不对（来源 %s）", request.client.host if request.client else "?")
-        return HTMLResponse(login_page("口令不对，再试一次。"), status_code=401)
+    password2 = str(form.get("password2") or "")
+
+    first = await _first_user(session)
+    if first is not None:
+        return HTMLResponse(register_page("系统里已经有账号了，直接登录就好。"), status_code=409)
+
+    problem = username_problem(username) or password_problem(password)
+    if problem:
+        return HTMLResponse(register_page(problem, username), status_code=400)
+    if password != password2:
+        return HTMLResponse(register_page("两次输入的口令不一致。", username), status_code=400)
+
+    from datetime import datetime, timezone
+
+    from ..models import AppUser
+    from ..security import hash_password, make_token, set_has_user
+
+    user = AppUser(
+        username=username,
+        password_hash=hash_password(password),
+        display_name=username,
+        last_login_at=datetime.now(timezone.utc),
+    )
+    session.add(user)
+    await session.commit()
+    set_has_user(True)
+    log.info("新账号注册：%s", username)
+
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(
         COOKIE_NAME,
-        make_token(),
+        make_token(username),
         max_age=max(1, settings.access_cookie_days) * 86400,
         httponly=True,
         samesite="lax",
         path="/",
     )
     return resp
+
+
+@router.post("/login")
+async def login_submit(request: Request, session: AsyncSession = Depends(get_session)):
+    form = await request.form()
+    username = str(form.get("username") or "").strip()
+    password = str(form.get("password") or "")
+
+    # 1) 先按账号登录
+    if username:
+        user = await _find_user(session, username)
+        if user and verify_password(password, user.password_hash):
+            from datetime import datetime, timezone
+
+            user.last_login_at = datetime.now(timezone.utc)
+            await session.commit()
+            log.info("登录成功：%s", username)
+            resp = RedirectResponse("/", status_code=303)
+            resp.set_cookie(
+                COOKIE_NAME,
+                make_token(username),
+                max_age=max(1, settings.access_cookie_days) * 86400,
+                httponly=True,
+                samesite="lax",
+                path="/",
+            )
+            return resp
+
+    # 2) 再试共享口令（兼容旧部署；也是忘记口令时的应急入口）
+    if not username and check_password(password):
+        log.info("应急口令登录成功")
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie(
+            COOKIE_NAME,
+            make_token(""),
+            max_age=max(1, settings.access_cookie_days) * 86400,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+        return resp
+
+    log.warning("登录失败（来源 %s）", request.client.host if request.client else "?")
+    first = await _first_user(session)
+    if first is None:
+        return HTMLResponse(register_page("口令不对，再试一次。", username), status_code=401)
+    return HTMLResponse(login_page("用户名或口令不对，再试一次。", username), status_code=401)
+
+
+@router.get("/me")
+async def whoami(request: Request, session: AsyncSession = Depends(get_session)):
+    """前端用来显示"当前是谁"。"""
+    from sqlalchemy import select
+
+    from ..models import AppUser
+    from ..security import token_username
+
+    names = [u.username for u in (await session.execute(select(AppUser))).scalars().all()]
+    name = token_username(request.cookies.get(COOKIE_NAME), names)
+    if name:
+        return {"authenticated": True, "username": name, "via": "account"}
+    if is_password_token(request.cookies.get(COOKIE_NAME)):
+        return {"authenticated": True, "username": None, "via": "password"}
+    return {"authenticated": False, "username": None, "via": None}
 
 
 @router.post("/logout")
