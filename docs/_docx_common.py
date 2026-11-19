@@ -1,4 +1,4 @@
-﻿"""生成初赛文档（数据库设计 / 接口设计）的 Word 版本。
+"""生成初赛文档（数据库设计 / 接口设计）的 Word 版本。
 
 排版按官方宣讲会要求：
 - 首页仅队伍信息，不放正文
@@ -22,7 +22,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
 DOCS = pathlib.Path(__file__).parent
-DB = DB_PATH_OVERRIDE or (pathlib.Path(__file__).parent.parent / "backend" / "local.db")
+DB = pathlib.Path(__file__).parent.parent / "backend" / "local.db"
 
 FONT_CN = "微软雅黑"
 FONT_EN = "Consolas"
