@@ -85,6 +85,16 @@ def caption(doc, text):
     return p
 
 
+def image(doc, path, width_cm=15.0):
+    """插入图片，顶格居中。"""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(6)
+    p.paragraph_format.space_after = Pt(4)
+    p.add_run().add_picture(str(path), width=Cm(width_cm))
+    return p
+
+
 def table(doc, headers, rows, widths=None, header_fill="EEF3FF"):
     t = doc.add_table(rows=1, cols=len(headers))
     t.style = "Table Grid"
