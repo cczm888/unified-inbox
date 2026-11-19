@@ -161,3 +161,27 @@ class NewMessageIn(BaseModel):
     target: str = Field(min_length=1, max_length=256)
     text: str = Field(min_length=1, max_length=8000)
     subject: str | None = Field(default=None, max_length=200)  # 仅邮箱用
+
+
+class AutoRuleIn(BaseModel):
+    """自动回复规则。keyword / platform 留空表示"更宽"的匹配。"""
+
+    platform: str | None = Field(default=None, max_length=32)
+    keyword: str | None = Field(default=None, max_length=128)
+    reply_text: str | None = Field(default=None, max_length=2000)
+    priority: int | None = Field(default=None, ge=1, le=999)
+    enabled: bool | None = None
+
+
+class AutoRuleOut(BaseModel):
+    id: int
+    platform: str | None = None
+    keyword: str | None = None
+    reply_text: str
+    priority: int
+    enabled: bool
+    hit_count: int = 0
+    last_hit_at: datetime | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

@@ -119,6 +119,14 @@ export const api = {
   stats: () => request('/api/v1/stats/overview'),
   health: () => request('/healthz'),
 
+  // ---- 自动回复规则 ----
+  autoRules: () => request('/api/v1/autoreply/rules'),
+  createAutoRule: (body) =>
+    request('/api/v1/autoreply/rules', { method: 'POST', body: JSON.stringify(body) }),
+  updateAutoRule: (id, body) =>
+    request(`/api/v1/autoreply/rules/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteAutoRule: (id) => request(`/api/v1/autoreply/rules/${id}`, { method: 'DELETE' }),
+
   // ---- 用户身份（OAuth）----
   feishuAuthUrl: () => request('/api/v1/auth/feishu/url'),
   accounts: () => request('/api/v1/auth/accounts'),
@@ -171,5 +179,5 @@ export const PRIORITY_COLOR = { urgent: 'red', normal: 'default', low: 'default'
 
 // 主动发起一条新消息（选联系人发，不是回复）
 export function sendNew(body) {
-  return request('/api/v1/inbox/send', { method: 'POST', body })
+  return request('/api/v1/inbox/send', { method: 'POST', body: JSON.stringify(body) })
 }

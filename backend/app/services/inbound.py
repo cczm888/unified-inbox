@@ -56,6 +56,14 @@ async def handle_inbound(platform: str, raw: dict) -> int | None:
 
     if new_id is not None:
         log.info("[%s] 新消息入库 id=%s chat=%s", platform, new_id, unified.chat_id)
+        # 自动回复：命中规则就入队一条回信（走 Outbox，和人工回复同一条链路）。
+        # 放在入库之后、事务外，失败只记日志，不能因为它把消息丢了。
+        try:
+            from . import autoreply
+
+            await autoreply.maybe_auto_reply(platform, unified.chat_id, new_id, unified.text)
+        except Exception:
+            log.warning("[%s] 自动回复失败（不影响入库）", platform, exc_info=True)
     return new_id
 
 

@@ -73,6 +73,7 @@ async def ingest(body: IngestIn, session: AsyncSession = Depends(get_session)) -
         )
 
     inserted = 0
+    new_ids: list[int] = []
     if rows:
         stmt = (
             inserter(Message)
@@ -81,8 +82,24 @@ async def ingest(body: IngestIn, session: AsyncSession = Depends(get_session)) -
             .returning(Message.id)
         )
         result = await session.execute(stmt)
-        inserted = len(result.fetchall())
+        new_ids = [r[0] for r in result.fetchall()]
+        inserted = len(new_ids)
         await session.commit()
+
+    # 自动回复：外部采集进来的消息也该享受同一套规则。
+    # 只对 direction=in 的、且确实新插入的行触发（重推的旧消息不重复回）。
+    if new_ids:
+        try:
+            from ..services import autoreply
+
+            inbound = {r["platform_msg_id"]: r for r in rows if r["direction"] == "in"}
+            for msg_id in new_ids:
+                row = await session.get(Message, msg_id)
+                if row is None or row.direction != "in":
+                    continue
+                await autoreply.maybe_auto_reply(row.platform, row.chat_id, row.id, row.text_body or "")
+        except Exception:
+            log.warning("ingest 后自动回复失败（不影响入库）", exc_info=True)
 
     log.info("ingest %s: %d received, %d inserted", body.platform, len(rows), inserted)
     return {

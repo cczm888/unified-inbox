@@ -262,3 +262,30 @@ class AppUser(Base):
     display_name: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class AutoRule(Base):
+    """自动回复规则：闭环里「自动或人工回复」的那一半。
+
+    匹配逻辑刻意做得朴素：关键词命中（不区分大小写）+ 平台过滤，
+    按 priority 从小到大取第一条命中的规则。
+
+    为什么不用正则或语义匹配：答辩时规则要能当场解释清楚。
+    「客户说『在吗』就自动回『在的，请说』」这种规则，评审一看就懂；
+    换成向量相似度反而要花五分钟解释它为什么乱回。
+
+    keyword 为空表示「这个平台的任何消息都命中」——可以做"收到请稍等"这类兜底。
+    platform 为空表示「所有平台」。
+    """
+
+    __tablename__ = "auto_rule"
+
+    id: Mapped[int] = mapped_column(PK_BIGINT, primary_key=True, autoincrement=True)
+    platform: Mapped[str | None] = mapped_column(String(32))
+    keyword: Mapped[str | None] = mapped_column(String(128))
+    reply_text: Mapped[str] = mapped_column(Text)
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    hit_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), server_default=func.now())
+    last_hit_at: Mapped[datetime | None] = mapped_column(UTCDateTime())

@@ -16,6 +16,10 @@ import {
 const platforms = ref([])
 // 库里保存的平台连接（运行时接入的那些，重启后自动恢复）
 const savedPlats = ref([])
+// 自动回复规则（关键词 → 回一条）
+const autoRules = ref([])
+const newRule = reactive({ platform: undefined, keyword: '', reply_text: '' })
+const addingRule = ref(false)
 const threads = ref([])
 const messages = ref([])
 const todos = ref([])
@@ -340,6 +344,60 @@ async function loadAccounts() {
     savedPlats.value = r.items || []
   } catch (e) {
     savedPlats.value = []
+  }
+  await loadRules()
+}
+
+// ---------- 自动回复规则 ----------
+async function loadRules() {
+  try {
+    autoRules.value = await api.autoRules()
+  } catch (e) {
+    autoRules.value = []
+  }
+}
+
+async function addRule() {
+  const reply = (newRule.reply_text || '').trim()
+  if (!reply) {
+    antMessage.warning('先写一句自动回复的内容')
+    return
+  }
+  addingRule.value = true
+  try {
+    await api.createAutoRule({
+      platform: newRule.platform || null,
+      keyword: (newRule.keyword || '').trim() || null,
+      reply_text: reply,
+    })
+    antMessage.success('规则已添加，下一条命中的消息会自动回')
+    newRule.keyword = ''
+    newRule.reply_text = ''
+    await loadRules()
+  } catch (e) {
+    antMessage.error('添加失败：' + e.message)
+  } finally {
+    addingRule.value = false
+  }
+}
+
+async function toggleRule(rule, enabled) {
+  try {
+    await api.updateAutoRule(rule.id, { enabled })
+    rule.enabled = enabled
+  } catch (e) {
+    antMessage.error('切换失败：' + e.message)
+    await loadRules()
+  }
+}
+
+async function removeRule(rule) {
+  try {
+    await api.deleteAutoRule(rule.id)
+    antMessage.success('规则已删除')
+    await loadRules()
+  } catch (e) {
+    antMessage.error('删除失败：' + e.message)
   }
 }
 
@@ -1287,6 +1345,39 @@ onBeforeUnmount(() => {
       <a-divider v-if="syncResult" />
       <div v-if="syncResult" style="font-size: 12px; color: #389e0d">{{ syncResult }}</div>
 
+      <a-divider>自动回复（{{ autoRules.length }} 条规则）</a-divider>
+      <div class="ar-hint">
+        命中关键词就自动回一条。规则按优先级从小到大匹配，第一条命中即用；关键词留空表示该平台的兜底。
+      </div>
+      <div v-if="!autoRules.length" class="acc-empty">还没有规则。比如「在吗 → 在的，请说」。</div>
+      <div v-for="r in autoRules" :key="r.id" class="ar-card">
+        <div class="ar-row">
+          <span class="ar-kw">{{ r.keyword || '（兜底）' }}</span>
+          <span class="st-pill plat-pill">{{ r.platform ? (PLATFORM_LABEL[r.platform] || r.platform) : '全部平台' }}</span>
+          <span class="ar-hit">命中 {{ r.hit_count }} 次</span>
+          <a-switch
+            size="small"
+            :checked="r.enabled"
+            @change="(v) => toggleRule(r, v)"
+          />
+          <a-popconfirm title="删除这条规则？" ok-text="删除" cancel-text="算了" @confirm="removeRule(r)">
+            <a-button size="small" type="text" danger>删</a-button>
+          </a-popconfirm>
+        </div>
+        <div class="ar-text">{{ r.reply_text }}</div>
+      </div>
+      <div class="ar-form">
+        <a-select v-model:value="newRule.platform" size="small" style="width: 110px" allow-clear placeholder="全部平台">
+          <a-select-option value="feishu">飞书</a-select-option>
+          <a-select-option value="email">邮箱</a-select-option>
+          <a-select-option value="telegram">Telegram</a-select-option>
+          <a-select-option value="dingtalk">钉钉</a-select-option>
+        </a-select>
+        <a-input v-model:value="newRule.keyword" size="small" placeholder="关键词（留空=兜底）" style="width: 150px" />
+        <a-input v-model:value="newRule.reply_text" size="small" placeholder="自动回复内容" />
+        <a-button size="small" type="primary" :loading="addingRule" @click="addRule">添加</a-button>
+      </div>
+
       <a-divider>已接入的平台</a-divider>
       <div v-if="!savedPlats.length" class="acc-empty">
         还没有接入任何平台。下面填一次凭证就会出现在这里，重启后自动恢复。
@@ -2177,6 +2268,21 @@ onBeforeUnmount(() => {
 .saved-status.is-idle { color: var(--t3); }
 .saved-status.is-bad { color: var(--red); }
 .saved-hint { font-size: 12px; color: var(--t3); flex: none; }
+
+/* 自动回复规则 */
+.ar-hint { font-size: 12px; color: var(--t3); line-height: 1.7; margin-bottom: 8px; }
+.ar-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--sub);
+}
+.ar-row { display: flex; align-items: center; gap: 8px; }
+.ar-kw { font-weight: 600; font-size: 13px; color: var(--t1); }
+.ar-hit { font-size: 11px; color: var(--t3); margin-left: auto; }
+.ar-text { font-size: 12.5px; color: var(--t2); margin-top: 5px; line-height: 1.6; }
+.ar-form { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
 .quote-bar {
   display: flex;
   align-items: baseline;
