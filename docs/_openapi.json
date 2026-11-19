@@ -1,0 +1,2955 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Unified Inbox · 多平台连接器",
+  "version": "1.0.0"
+ },
+ "paths": {
+  "/api/v1/inbox": {
+   "get": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "List Inbox",
+    "operationId": "list_inbox_api_v1_inbox_get",
+    "parameters": [
+     {
+      "name": "platform",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Platform"
+      }
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "name": "chat_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Chat Id"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "default": 50,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 0,
+       "title": "Offset"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/MessageOut"
+         },
+         "title": "Response List Inbox Api V1 Inbox Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/threads": {
+   "get": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "List Threads",
+    "description": "按平台+会话聚合，形成\"统一收件箱\"的左侧列表。\n\n这里刻意只用标准 SQL：\n  * `array_agg(...)[1]` 是 PostgreSQL 专有写法，SQLite 会报 near \"AS\" 语法错误\n  * 改用相关子查询取最后一条正文，Postgres / SQLite 都能跑\n\n`q` 是搜索词：同时匹配会话标题、会话 ID 和该会话里的任意一条消息正文，\n这样员工搜\"合同\"能直接定位到聊过合同的那个会话。",
+    "operationId": "list_threads_api_v1_inbox_threads_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "default": 50,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Q"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ThreadOut"
+         },
+         "title": "Response List Threads Api V1 Inbox Threads Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/read": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Mark Read",
+    "description": "把会话（或指定几条消息）标为已读。\n\n和 status 分开：已读 = 看过，status = 处理到哪一步。\n员工点开会话就不会再有\"未读\"提示，但消息仍然可能是\"待处理\"。",
+    "operationId": "mark_read_api_v1_inbox_read_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReadIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/bulk/read": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Bulk Read",
+    "description": "跨会话批量标已读（勾选几条消息一起清未读）。\n\n返回里的 `inbound` 是选中项中「收到的消息」条数：点开会话时前端已经\n自动标过已读，所以这里常常是 read=0、inbound=N，界面据此给不同提示。",
+    "operationId": "bulk_read_api_v1_inbox_bulk_read_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BulkIdsIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/bulk/status": {
+   "patch": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Bulk Status",
+    "description": "批量改处理状态（不回流通知，避免把对方刷屏）。\n\n只作用于收到的消息：发出的消息 status 记的是投递结果（sent），\n不能拿「处理进度」去覆盖。",
+    "operationId": "bulk_status_api_v1_inbox_bulk_status_patch",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BulkStatusIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/bulk/priority": {
+   "patch": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Bulk Priority",
+    "description": "批量改紧急程度（人工覆盖 AI 判断，同时留纠正样本）。",
+    "operationId": "bulk_priority_api_v1_inbox_bulk_priority_patch",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BulkPriorityIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/backfill": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Backfill History",
+    "description": "拉会话历史补进收件箱。\n\n实时事件只覆盖接入之后的消息；这个接口把之前的老对话补回来。\n走的是和实时事件同一条入库管道，回填完看不出差别。",
+    "operationId": "backfill_history_api_v1_inbox_backfill_post",
+    "parameters": [
+     {
+      "name": "platform",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Platform"
+      }
+     },
+     {
+      "name": "chat_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Chat Id"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 200,
+       "minimum": 1,
+       "default": 50,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}": {
+   "get": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Get Message",
+    "operationId": "get_message_api_v1_inbox__message_id__get",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MessageOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}/attachments/{index}": {
+   "get": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Get Attachment",
+    "description": "附件代理：图片直接内联给浏览器预览，其它类型走下载。\n\n为什么不让前端直连平台：飞书的资源要 tenant_access_token、Telegram 要 bot token，\n这些绝不能进浏览器。所以统一由后端取回再转发，前端只看到同源 URL。",
+    "operationId": "get_attachment_api_v1_inbox__message_id__attachments__index__get",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     },
+     {
+      "name": "index",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Index"
+      }
+     },
+     {
+      "name": "download",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Download"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}/reply": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Reply To Message",
+    "description": "闭环第三步：在统一入口处理完，回复内容自动转换为目标平台格式并发送。",
+    "operationId": "reply_to_message_api_v1_inbox__message_id__reply_post",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReplyIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}/reply-file": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Reply With File",
+    "description": "从统一入口向原会话发送文件（赛题要求的「发文本与文件」里的文件那半边）。",
+    "operationId": "reply_with_file_api_v1_inbox__message_id__reply_file_post",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_reply_with_file_api_v1_inbox__message_id__reply_file_post"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}/todo": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Create Todo",
+    "description": "消息 -> 待办：闭环里\"处理\"动作的另一种形态，状态变更后会回流平台。",
+    "operationId": "create_todo_api_v1_inbox__message_id__todo_post",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TodoIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}/status": {
+   "patch": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Change Status",
+    "description": "状态流转 + 可选回流：这是闭环 8 分\"状态流转\"的直接体现。",
+    "operationId": "change_status_api_v1_inbox__message_id__status_patch",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/StatusIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}/summarize": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Summarize Message",
+    "description": "AI 摘要 + 优先级推断（无 key 自动降级规则版）。",
+    "operationId": "summarize_message_api_v1_inbox__message_id__summarize_post",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}/priority": {
+   "patch": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Set Priority",
+    "description": "人工改紧急程度（覆盖 AI 判断），并记一条 Feedback 用于后续调规则。",
+    "operationId": "set_priority_api_v1_inbox__message_id__priority_patch",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PriorityIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}/draft": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Draft Message",
+    "operationId": "draft_message_api_v1_inbox__message_id__draft_post",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/{message_id}/forward": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Forward Message",
+    "description": "跨平台转发：把 A 平台的消息推到 B 平台，验证\"统一出站\"抽象。",
+    "operationId": "forward_message_api_v1_inbox__message_id__forward_post",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     },
+     {
+      "name": "target_platform",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Target Platform"
+      }
+     },
+     {
+      "name": "target_chat",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Target Chat"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/events": {
+   "get": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Event Stream",
+    "description": "SSE 实时推送新消息（轮询数据库实现，简单可靠，演示时延迟 < 2 秒）。",
+    "operationId": "event_stream_api_v1_events_get",
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Since"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/inbox/send": {
+   "post": {
+    "tags": [
+     "inbox"
+    ],
+    "summary": "Send New",
+    "description": "从统一入口主动发起一条新消息（选联系人发，不是回复）。\n\n与 /reply 的区别：reply 挂在一条已收到的消息上，状态跟着那条消息走；\n这里没有父消息，所以不产生 Message 行，只入 Outbox，发出后由 _mark_sent\n补登一条 direction=out 的出站消息（这样收件箱里也能看到自己发出去的话）。",
+    "operationId": "send_new_api_v1_inbox_send_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NewMessageIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/ingest": {
+   "post": {
+    "tags": [
+     "ingest"
+    ],
+    "summary": "Ingest",
+    "description": "批量接收外部采集的消息。\n\n幂等：同 `(platform, platform_msg_id)` 重复推送不会产生新行，\n所以采集器可以放心地反复跑（重扫一个会话、补一次历史都不会脏数据）。",
+    "operationId": "ingest_api_v1_ingest_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/IngestIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Ingest Api V1 Ingest Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/todos": {
+   "get": {
+    "tags": [
+     "todo"
+    ],
+    "summary": "List Todos",
+    "operationId": "list_todos_api_v1_todos_get",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "name": "platform",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Platform"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/TodoOut"
+         },
+         "title": "Response List Todos Api V1 Todos Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/todos/{todo_id}": {
+   "patch": {
+    "tags": [
+     "todo"
+    ],
+    "summary": "Update Todo",
+    "operationId": "update_todo_api_v1_todos__todo_id__patch",
+    "parameters": [
+     {
+      "name": "todo_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Todo Id"
+      }
+     },
+     {
+      "name": "notify",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Notify"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TodoStatusIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/platforms": {
+   "get": {
+    "tags": [
+     "platforms"
+    ],
+    "summary": "List Platforms",
+    "operationId": "list_platforms_api_v1_platforms_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/platforms/saved": {
+   "get": {
+    "tags": [
+     "platforms"
+    ],
+    "summary": "List Saved",
+    "description": "界面上保存过的平台凭证（不返回任何密钥明文）。",
+    "operationId": "list_saved_api_v1_platforms_saved_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/platforms/connect": {
+   "post": {
+    "tags": [
+     "platforms"
+    ],
+    "summary": "Connect Platform",
+    "description": "在网页上填凭证即可接入新平台，无需改 .env、无需重启。",
+    "operationId": "connect_platform_api_v1_platforms_connect_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConnectIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/platforms/{platform}/connect": {
+   "delete": {
+    "tags": [
+     "platforms"
+    ],
+    "summary": "Disconnect Platform",
+    "description": "停用平台。\n\n默认软停用（保留加密凭证，之后可 /enable 重新拉起）；`?purge=true` 才是真删。",
+    "operationId": "disconnect_platform_api_v1_platforms__platform__connect_delete",
+    "parameters": [
+     {
+      "name": "platform",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Platform"
+      }
+     },
+     {
+      "name": "purge",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Purge"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/platforms/{platform}/enable": {
+   "post": {
+    "tags": [
+     "platforms"
+    ],
+    "summary": "Enable Platform",
+    "description": "重新启用之前停用的平台（凭证还在，不用重新填）。",
+    "operationId": "enable_platform_api_v1_platforms__platform__enable_post",
+    "parameters": [
+     {
+      "name": "platform",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Platform"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/platforms/{platform}/test": {
+   "post": {
+    "tags": [
+     "platforms"
+    ],
+    "summary": "Test Platform",
+    "description": "往指定会话发一条测试消息：可复现的连通性证据。",
+    "operationId": "test_platform_api_v1_platforms__platform__test_post",
+    "parameters": [
+     {
+      "name": "platform",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Platform"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TestSendIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/stats/overview": {
+   "get": {
+    "tags": [
+     "stats"
+    ],
+    "summary": "Overview",
+    "operationId": "overview_api_v1_stats_overview_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/stats/recent-events": {
+   "get": {
+    "tags": [
+     "stats"
+    ],
+    "summary": "Recent Events",
+    "operationId": "recent_events_api_v1_stats_recent_events_get",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 20,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/login": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Login Form",
+    "description": "有账号给登录页，没账号给注册页。",
+    "operationId": "login_form_api_v1_auth_login_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Login Submit",
+    "operationId": "login_submit_api_v1_auth_login_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/register": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Register Form",
+    "operationId": "register_form_api_v1_auth_register_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Register Submit",
+    "operationId": "register_submit_api_v1_auth_register_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/me": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Whoami",
+    "description": "前端用来显示\"当前是谁\"。",
+    "operationId": "whoami_api_v1_auth_me_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/logout": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Logout",
+    "operationId": "logout_api_v1_auth_logout_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/feishu/url": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Feishu Authorize Url",
+    "description": "生成授权链接，前端点一下就能跳。",
+    "operationId": "feishu_authorize_url_api_v1_auth_feishu_url_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/feishu/callback": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Feishu Callback",
+    "description": "飞书授权后回调到这里：换 token、拉用户信息、落库。",
+    "operationId": "feishu_callback_api_v1_auth_feishu_callback_get",
+    "parameters": [
+     {
+      "name": "code",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Code"
+      }
+     },
+     {
+      "name": "state",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "State"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/accounts": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Get Accounts",
+    "operationId": "get_accounts_api_v1_auth_accounts_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/accounts/{account_id}/refresh": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Refresh Account",
+    "operationId": "refresh_account_api_v1_auth_accounts__account_id__refresh_post",
+    "parameters": [
+     {
+      "name": "account_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Account Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/accounts/{account_id}/sync": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Sync Account",
+    "description": "用用户身份把「我这个账号能看到的会话」同步进统一收件箱。",
+    "operationId": "sync_account_api_v1_auth_accounts__account_id__sync_post",
+    "parameters": [
+     {
+      "name": "account_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Account Id"
+      }
+     },
+     {
+      "name": "chats",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 20,
+       "title": "Chats"
+      }
+     },
+     {
+      "name": "per_chat",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "title": "Per Chat"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/accounts/{account_id}/chats": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "List My Chats",
+    "description": "列出这个账号可见的全部会话（用户身份才做得到）。",
+    "operationId": "list_my_chats_api_v1_auth_accounts__account_id__chats_get",
+    "parameters": [
+     {
+      "name": "account_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Account Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/accounts/{account_id}": {
+   "delete": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Remove Account",
+    "operationId": "remove_account_api_v1_auth_accounts__account_id__delete",
+    "parameters": [
+     {
+      "name": "account_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Account Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/autoreply/rules": {
+   "get": {
+    "tags": [
+     "autoreply"
+    ],
+    "summary": "List Rules",
+    "operationId": "list_rules_api_v1_autoreply_rules_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AutoRuleOut"
+         },
+         "type": "array",
+         "title": "Response List Rules Api V1 Autoreply Rules Get"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "autoreply"
+    ],
+    "summary": "Create Rule",
+    "operationId": "create_rule_api_v1_autoreply_rules_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoRuleIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoRuleOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/autoreply/rules/{rule_id}": {
+   "patch": {
+    "tags": [
+     "autoreply"
+    ],
+    "summary": "Update Rule",
+    "operationId": "update_rule_api_v1_autoreply_rules__rule_id__patch",
+    "parameters": [
+     {
+      "name": "rule_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Rule Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutoRuleIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AutoRuleOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "autoreply"
+    ],
+    "summary": "Delete Rule",
+    "operationId": "delete_rule_api_v1_autoreply_rules__rule_id__delete",
+    "parameters": [
+     {
+      "name": "rule_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Rule Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/healthz": {
+   "get": {
+    "tags": [
+     "infra"
+    ],
+    "summary": "Healthz",
+    "operationId": "healthz_healthz_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "AutoRuleIn": {
+    "properties": {
+     "platform": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 32
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Platform"
+     },
+     "keyword": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 128
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Keyword"
+     },
+     "reply_text": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 2000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reply Text"
+     },
+     "priority": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 999.0,
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Priority"
+     },
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     }
+    },
+    "type": "object",
+    "title": "AutoRuleIn",
+    "description": "自动回复规则。keyword / platform 留空表示\"更宽\"的匹配。"
+   },
+   "AutoRuleOut": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "platform": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Platform"
+     },
+     "keyword": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Keyword"
+     },
+     "reply_text": {
+      "type": "string",
+      "title": "Reply Text"
+     },
+     "priority": {
+      "type": "integer",
+      "title": "Priority"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled"
+     },
+     "hit_count": {
+      "type": "integer",
+      "title": "Hit Count",
+      "default": 0
+     },
+     "last_hit_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Hit At"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "reply_text",
+     "priority",
+     "enabled",
+     "created_at"
+    ],
+    "title": "AutoRuleOut"
+   },
+   "Body_reply_with_file_api_v1_inbox__message_id__reply_file_post": {
+    "properties": {
+     "file": {
+      "type": "string",
+      "contentMediaType": "application/octet-stream",
+      "title": "File"
+     }
+    },
+    "type": "object",
+    "required": [
+     "file"
+    ],
+    "title": "Body_reply_with_file_api_v1_inbox__message_id__reply_file_post"
+   },
+   "BulkIdsIn": {
+    "properties": {
+     "ids": {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array",
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Ids"
+     }
+    },
+    "type": "object",
+    "required": [
+     "ids"
+    ],
+    "title": "BulkIdsIn"
+   },
+   "BulkPriorityIn": {
+    "properties": {
+     "ids": {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array",
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Ids"
+     },
+     "priority": {
+      "type": "string",
+      "pattern": "^(urgent|normal|low)$",
+      "title": "Priority"
+     }
+    },
+    "type": "object",
+    "required": [
+     "ids",
+     "priority"
+    ],
+    "title": "BulkPriorityIn"
+   },
+   "BulkStatusIn": {
+    "properties": {
+     "ids": {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array",
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Ids"
+     },
+     "status": {
+      "type": "string",
+      "pattern": "^(received|claimed|replied|closed)$",
+      "title": "Status"
+     }
+    },
+    "type": "object",
+    "required": [
+     "ids",
+     "status"
+    ],
+    "title": "BulkStatusIn"
+   },
+   "ConnectIn": {
+    "properties": {
+     "platform": {
+      "type": "string",
+      "title": "Platform"
+     },
+     "app_id": {
+      "type": "string",
+      "title": "App Id",
+      "default": ""
+     },
+     "secret": {
+      "type": "string",
+      "title": "Secret",
+      "default": ""
+     },
+     "label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Label"
+     },
+     "extra": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Extra"
+     }
+    },
+    "type": "object",
+    "required": [
+     "platform"
+    ],
+    "title": "ConnectIn",
+    "description": "界面上添加一个平台：只会用到其中一两项，按平台取。"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "IngestIn": {
+    "properties": {
+     "platform": {
+      "type": "string",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Platform"
+     },
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/IngestItem"
+      },
+      "type": "array",
+      "maxItems": 500,
+      "minItems": 1,
+      "title": "Items"
+     },
+     "meta": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Meta"
+     }
+    },
+    "type": "object",
+    "required": [
+     "platform",
+     "items"
+    ],
+    "title": "IngestIn"
+   },
+   "IngestItem": {
+    "properties": {
+     "platform_msg_id": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Platform Msg Id"
+     },
+     "chat_id": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Chat Id"
+     },
+     "chat_name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Chat Name"
+     },
+     "sender_name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sender Name"
+     },
+     "sender_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sender Id"
+     },
+     "text": {
+      "type": "string",
+      "maxLength": 20000,
+      "title": "Text",
+      "default": ""
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "direction": {
+      "type": "string",
+      "pattern": "^(in|out)$",
+      "title": "Direction",
+      "default": "in"
+     }
+    },
+    "type": "object",
+    "required": [
+     "platform_msg_id",
+     "chat_id"
+    ],
+    "title": "IngestItem",
+    "description": "外部采集器推来的一条消息。\n\n用于「平台没有可用的官方 API」或「官方 API 拿不到某类消息」时，\n由外部脚本（浏览器采集器 / 导出解析器 / 第三方 webhook）把消息推进来。"
+   },
+   "MessageOut": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "platform": {
+      "type": "string",
+      "title": "Platform"
+     },
+     "chat_id": {
+      "type": "string",
+      "title": "Chat Id"
+     },
+     "chat_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Chat Type"
+     },
+     "sender_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sender Name"
+     },
+     "sender_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sender Id"
+     },
+     "msg_type": {
+      "type": "string",
+      "title": "Msg Type"
+     },
+     "text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     },
+     "attachments": {
+      "anyOf": [
+       {
+        "items": {},
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Attachments"
+     },
+     "direction": {
+      "type": "string",
+      "title": "Direction"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "priority": {
+      "type": "string",
+      "title": "Priority"
+     },
+     "read_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Read At"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "platform",
+     "chat_id",
+     "msg_type",
+     "direction",
+     "status",
+     "priority",
+     "created_at"
+    ],
+    "title": "MessageOut"
+   },
+   "NewMessageIn": {
+    "properties": {
+     "platform": {
+      "type": "string",
+      "pattern": "^(feishu|telegram|email|dingtalk)$",
+      "title": "Platform"
+     },
+     "target": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Target"
+     },
+     "text": {
+      "type": "string",
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Text"
+     },
+     "subject": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Subject"
+     }
+    },
+    "type": "object",
+    "required": [
+     "platform",
+     "target",
+     "text"
+    ],
+    "title": "NewMessageIn",
+    "description": "从统一入口主动发起一条新消息（不是回复已有会话）。\n\n赛题要求「选择联系人发送消息」，所以平台与目标都要显式给。\n目标语义按平台不同：飞书/Telegram 是 chat_id，邮箱是收件人地址。"
+   },
+   "PriorityIn": {
+    "properties": {
+     "priority": {
+      "type": "string",
+      "pattern": "^(urgent|normal|low)$",
+      "title": "Priority"
+     }
+    },
+    "type": "object",
+    "required": [
+     "priority"
+    ],
+    "title": "PriorityIn"
+   },
+   "ReadIn": {
+    "properties": {
+     "platform": {
+      "type": "string",
+      "title": "Platform"
+     },
+     "chat_id": {
+      "type": "string",
+      "title": "Chat Id"
+     },
+     "message_ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Message Ids"
+     }
+    },
+    "type": "object",
+    "required": [
+     "platform",
+     "chat_id"
+    ],
+    "title": "ReadIn",
+    "description": "把某个会话标为已读（或只标某几条）。"
+   },
+   "ReplyIn": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text"
+     },
+     "quote_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Quote Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "ReplyIn"
+   },
+   "StatusIn": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "pattern": "^(received|claimed|replied|closed)$",
+      "title": "Status"
+     },
+     "notify": {
+      "type": "boolean",
+      "title": "Notify",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "status"
+    ],
+    "title": "StatusIn"
+   },
+   "TestSendIn": {
+    "properties": {
+     "chat_id": {
+      "type": "string",
+      "title": "Chat Id"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "default": "统一收件箱连通性测试 ✅"
+     }
+    },
+    "type": "object",
+    "required": [
+     "chat_id"
+    ],
+    "title": "TestSendIn"
+   },
+   "ThreadOut": {
+    "properties": {
+     "platform": {
+      "type": "string",
+      "title": "Platform"
+     },
+     "chat_id": {
+      "type": "string",
+      "title": "Chat Id"
+     },
+     "chat_title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Chat Title"
+     },
+     "last_text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Text"
+     },
+     "last_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last At"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total"
+     },
+     "pending": {
+      "type": "integer",
+      "title": "Pending"
+     },
+     "unread": {
+      "type": "integer",
+      "title": "Unread",
+      "default": 0
+     },
+     "urgent": {
+      "type": "integer",
+      "title": "Urgent",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "platform",
+     "chat_id",
+     "total",
+     "pending"
+    ],
+    "title": "ThreadOut"
+   },
+   "TodoIn": {
+    "properties": {
+     "title": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 500
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "due_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Due At"
+     },
+     "assignee": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assignee"
+     }
+    },
+    "type": "object",
+    "title": "TodoIn"
+   },
+   "TodoOut": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "platform": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Platform"
+     },
+     "chat_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Chat Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "assignee": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assignee"
+     },
+     "due_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Due At"
+     },
+     "source_message_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Message Id"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "status",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "TodoOut"
+   },
+   "TodoStatusIn": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "pattern": "^(pending|in_progress|done|cancelled)$",
+      "title": "Status"
+     }
+    },
+    "type": "object",
+    "required": [
+     "status"
+    ],
+    "title": "TodoStatusIn"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "ctx": {
+      "type": "object",
+      "title": "Context"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   }
+  }
+ }
+}
