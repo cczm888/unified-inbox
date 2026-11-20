@@ -102,9 +102,8 @@ def main():
 
     # ---------------------------------------------------------------- 2 逐表
     heading(doc, "二、表结构详述", 1)
-    body(doc, "本节逐张说明字段含义。字段类型一列写的是 SQLite 中的声明类型，"
-              "对应的 PostgreSQL 类型在括号中给出；两者由模型里的 with_variant 自动映射，"
-              "业务代码不需要区分。")
+    body(doc, "本节逐张说明字段含义。类型列写 SQLite 的声明类型，括号内是 PostgreSQL 对应类型——"
+              "两者由模型里的 with_variant 自动映射，业务代码不需要区分。")
 
     pg_types = {
         "BIGINT": "BIGINT", "INTEGER": "INTEGER", "VARCHAR": "VARCHAR",
@@ -116,7 +115,6 @@ def main():
         cn, desc = META[name]
         info = schema[name]
         heading(doc, f"2.{i} {name}（{cn}）", 2)
-        body(doc, desc)
 
         rows = []
         for c in info["cols"]:
@@ -134,10 +132,10 @@ def main():
                 "、".join(flag) or "可空",
                 c["default"] if c["default"] is not None else "—",
             ))
-        table(doc, ["字段", "类型", "约束", "默认值"], rows, widths=[4.2, 5.4, 2.6, 3.0])
-        caption(doc, f"表 2-{i} {name} 表字段定义。共 {len(info['cols'])} 个字段；"
-                     f"当前该表有 {info['rows']:,} 行数据。"
-                     + ("外键指向：" + "、".join(f"{a} → {b}" for a, b in info["fks"]) + "。" if info["fks"] else "")
+        table(doc, ["字段", "类型", "约束", "默认值"], rows, widths=[4.2, 5.4, 2.6, 3.0], font_size=8)
+        caption(doc, f"表 2-{i} {name}：{desc}"
+                     f"共 {len(info['cols'])} 个字段，当前 {info['rows']:,} 行。"
+                     + ("外键：" + "、".join(f"{a} → {b}" for a, b in info["fks"]) + "。" if info["fks"] else "")
                      + ("索引：" + "、".join(n for n, _u in info["idx"]) + "。" if info["idx"] else ""))
 
     # ---------------------------------------------------------------- 3 关系

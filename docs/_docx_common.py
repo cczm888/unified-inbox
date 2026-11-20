@@ -109,7 +109,7 @@ def image(doc, path, width_cm=15.0):
     return p
 
 
-def table(doc, headers, rows, widths=None, header_fill="EEF3FF"):
+def table(doc, headers, rows, widths=None, header_fill="EEF3FF", font_size=9):
     t = doc.add_table(rows=1, cols=len(headers))
     t.style = "Table Grid"
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -120,7 +120,7 @@ def table(doc, headers, rows, widths=None, header_fill="EEF3FF"):
         p = hdr[i].paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         line_spacing(p, 1.15)
-        set_run_font(p.add_run(h), size=9, bold=True)
+        set_run_font(p.add_run(h), size=font_size, bold=True)
         shd = OxmlElement("w:shd")
         shd.set(qn("w:fill"), header_fill)
         hdr[i]._tc.get_or_add_tcPr().append(shd)
@@ -131,7 +131,7 @@ def table(doc, headers, rows, widths=None, header_fill="EEF3FF"):
             p = cells[i].paragraphs[0]
             line_spacing(p, 1.15)
             txt = "" if v is None else str(v)
-            set_run_font(p.add_run(txt), size=9, en=FONT_EN if i == 0 else FONT_CN)
+            set_run_font(p.add_run(txt), size=font_size, en=FONT_EN if i == 0 else FONT_CN)
     if widths:
         for r in t.rows:
             for i, w in enumerate(widths):

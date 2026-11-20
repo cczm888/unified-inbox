@@ -72,13 +72,9 @@ def main():
               "采用 REST 风格：资源用名词、动作用 HTTP 方法、状态码表达结果。"
               "所有接口都由 FastAPI 生成 OpenAPI 描述，本文档的接口清单与参数说明"
               "直接来自该描述文件，因此不会与代码脱节。")
-    body(doc, "三条统一约定：")
-    body(doc, "第一，除 GET 外的请求体统一为 application/json，"
-              "唯一例外是文件上传（multipart/form-data）；"
-              "第二，错误响应用 {\"detail\": \"...\"} 结构，校验失败时 detail 为数组，"
-              "业务失败时 detail 为字符串；"
-              "第三，时间字段统一返回带 Z 后缀的 UTC 时间（如 2026-11-02T10:45:43Z），"
-              "由前端转换成本地时区显示。")
+    body(doc, "三条统一约定：除 GET 外的请求体一律 application/json（文件上传用 multipart）；"
+              "错误响应统一为 {\"detail\": ...}，其中校验失败的 detail 是数组、业务失败是字符串；"
+              "时间字段统一返回带 Z 的 UTC（如 2026-11-02T10:45:43Z），由前端转本地时区。")
 
     # ---------------------------------------------------------------- 2 总表
     heading(doc, "二、接口清单", 1)
@@ -99,16 +95,23 @@ def main():
         for method, p, short in items:
             rows.append((gname, method, p, short))
     table(doc, ["模块", "方法", "路径", "说明"], rows, widths=[3.0, 1.8, 7.4, 5.0])
-    caption(doc, f"表 2-1 接口清单（共 {total} 个）。按模块聚合后可以看出接口分布："
-                 "收件箱与消息模块占了一半以上，因为它的每个用户动作都对应一个独立接口"
-                 "（回复、发文件、转待办、改状态、改优先级、批量改、标已读、拉历史、主动发消息）。"
-                 "这种“一个动作一个接口”的拆法牺牲了接口数量，换来的是权限控制和错误处理"
-                 "可以逐接口设计，而不必在一个大接口里写分支。")
+    caption(doc, f"表 2-1 接口清单（共 {total} 个）。收件箱模块占一半以上，"
+                 "因为它的每个用户动作都是一个独立接口——牺牲接口数量，"
+                 "换来权限与错误处理可以逐接口设计。")
 
-    # ---------------------------------------------------------------- 3 分组详述
-    heading(doc, "三、接口详述", 1)
-    body(doc, "本节按模块说明关键接口的请求参数、响应结构与错误码。"
-              "字段类型中的 ? 表示可选，| 表示多选一。")
+    # ---------------------------------------------------------------- 3 核心接口
+    heading(doc, "三、核心接口详述", 1)
+    body(doc, "完整接口见上表。本节只展开八个决定闭环能否走通的接口，格式统一为"
+              "「做什么 / 请求 / 响应 / 错误」，参数里的 ? 表示可选、| 表示多选一。"
+              "其余接口多为标准增删改查，参数可由上表与 /openapi.json 直接取得——"
+              "逐个罗列只会让关键信息淹没在重复的格式里。")
+
+    def core(tag, title, what, req, resp, err):
+        heading(doc, f"{tag} {title}", 3)
+        body(doc, what)
+        body(doc, "请求：" + req)
+        body(doc, "响应：" + resp)
+        body(doc, "错误：" + err)
 
     DETAIL = {
         "/api/v1/inbox": (
@@ -237,52 +240,66 @@ def main():
         ),
     }
 
-    n = 0
-    for gname, prefixes, gdesc in GROUPS:
-        items = []
-        for path, ops in paths.items():
-            if find_group(path) == gname and any(path.startswith(p) for p in prefixes):
-                for m, op in ops.items():
-                    if m in METHOD_CN:
-                        items.append((path, m, op))
-        if not items:
-            continue
-        n += 1
-        heading(doc, f"3.{n} {gname}", 2)
-        body(doc, gdesc + f"。共 {len(items)} 个接口。")
+    core("3.1", "GET /inbox/threads", "会话聚合列表，左侧栏的数据源。按 (platform, chat_id) 分组，"
+         "算出最后一条对方消息、总条数、未读数、紧急数。最后一条优先取对方说的话——"
+         "否则自己刚发的自动回执会把真实对话顶出预览。",
+         "q（关键词，同时搜会话标题与消息正文）｜ platform（平台过滤）",
+         "ThreadOut[]：platform、chat_id、chat_title、last_text、last_at、total、pending、unread、urgent",
+         "401 未登录")
 
-        for path, m, op in sorted(items, key=lambda x: (x[0], x[1])):
-            short, long_desc = describe(op)
-            heading(doc, f"{METHOD_CN[m]} {path.replace('/api/v1', '')}", 3)
-            detail = DETAIL.get(path)
-            if detail:
-                summary, params, resp, errs = detail
-                body(doc, summary)
-                if params:
-                    table(doc, ["参数", "类型", "说明"],
-                          [(a, b, c) for a, b, c in params],
-                          widths=[4.2, 3.0, 10.0])
-                body(doc, "响应：" + resp)
-                body(doc, "错误：" + errs)
-            else:
-                body(doc, long_desc or short or "（见参数定义）")
-                params = op.get("parameters", [])
-                if params:
-                    rows = []
-                    for p in params:
-                        sch = p.get("schema", {})
-                        t = sch.get("type") or sch.get("anyOf", [{}])[0].get("type", "—")
-                        rows.append((p.get("name"), f"{t}{'' if p.get('required') else '?'}",
-                                     p.get("description") or "—"))
-                    table(doc, ["参数", "类型", "说明"], rows, widths=[4.2, 3.0, 10.0])
+    core("3.2", "POST /inbox/{message_id}/reply", "回复某条消息。正文先写进 outbox，由 worker 投递，"
+         "接口立刻返回、不阻塞在平台响应上。可选 quote_id 引用历史消息——各平台原生引用实现不一，"
+         "统一层用「引用块 + 正文」的文本形式保证跨平台一致。",
+         "text（正文）｜ quote_id?（被引用消息的 id，会在正文前拼一句摘要）",
+         "{\"ok\": true, \"outbox_id\": 12, \"platform\": \"feishu\", \"status\": \"claimed\"}。"
+         "状态是 claimed 而不是 replied——真正变成 replied 要等 worker 发送成功回写。",
+         "400 平台不在线；404 消息不存在")
 
-    caption(doc, "表 3-x（各接口参数表）。所有参数表都遵循同一格式：参数名、类型、说明。"
-                 "类型里的 ? 表示可选，默认值直接写在类型后面。这样写的目的是让读者不必"
-                 "来回翻代码就能构造出一次合法请求；相比之下只列路径不列参数的接口文档，"
-                 "对接时仍然要看源码，等于没写。")
+    core("3.3", "POST /inbox/{message_id}/reply-file", "以附件形式回复。multipart 上传，落盘后交给 outbox 投递。"
+         "实测中这条链路穿过一次 Word 文档，往返后 sha256 与原件一致。",
+         "file（multipart，≤20MB，文件名做安全清洗）",
+         "{\"ok\": true, \"outbox_id\": 7, \"filename\": \"季度汇报.md\", \"size\": 129}",
+         "413 超过 20MB；400 平台不支持发文件")
+
+    core("3.4", "POST /inbox/send", "主动发起新消息，不是回复某条。闭环里「选一个联系人，直接说句话」"
+         "走的这个接口。与 reply 的区别是没有父消息，出站记录由 worker 发送成功后补登。",
+         "platform（目标平台）｜ target（飞书/钉钉是 chat_id，邮箱是地址，Telegram 是 chat id）"
+         "｜ text（正文）｜ subject?（仅邮箱）",
+         "{\"ok\": true, \"outbox_id\": 12}",
+         "400 平台未接入，或目标格式不对（如邮箱缺 @）")
+
+    core("3.5", "POST /inbox/backfill", "从平台回填历史。长连接只能收到订阅之后的消息，"
+         "接入前的老消息靠这个补——飞书的应用身份可以读整个会话的历史，不受订阅时间限制。",
+         "platform（平台）｜ chat_id（会话）｜ limit（默认 50）",
+         "{\"ok\": true, \"fetched\": 19, \"inserted\": 14}。fetched 是平台给的条数，"
+         "inserted 是真正新增的，两者之差就是已经有的。",
+         "400 平台拉不了历史，或机器人不在这个会话里")
+
+    core("3.6", "POST /platforms/connect", "运行时接入一个平台。填完凭证即时生效，"
+         "不需要改 .env 也不需要重启——这是「填凭证即接入」的关键，否则每加一个平台都要停机。"
+         "凭证用 Fernet 加密后入库，接口从不返回明文。",
+         "platform（email / telegram / feishu / dingtalk）｜ app_id（账号、App ID 或 Bot 用户名）"
+         "｜ secret（授权码、App Secret 或 Bot Token）｜ label?（显示名）｜ extra?（邮箱可传 imap_host / smtp_host）",
+         "{\"ok\": true, \"platform\": \"email\", \"label\": \"xxx@qq.com\", \"ready\": true}",
+         "400 凭证错——把平台返回的原始错误透出来，而不是笼统地说“接入失败”")
+
+    core("3.7", "POST /ingest", "外部采集通道。浏览器插件或 RPA 抓到的消息推到这里，"
+         "走与官方适配器完全相同的入库管道（同一套幂等去重、同一套自动回复触发）。"
+         "这是「官方接口拿不到时的补充通道」，不是主链路。",
+         "platform（来源标识，如 feishu_web）｜ items（每项含 platform_msg_id、chat_id、"
+         "chat_title、text、sender_name、created_at、meta）",
+         "{\"ok\": true, \"received\": 1, \"inserted\": 1, \"skipped\": 0}",
+         "422 结构不对；重复推送返回 skipped 而不是报错")
+
+    caption(doc, "表 3-1 八个核心接口的约定汇总。选这八个的标准是「少了它闭环就断」："
+                 "3.1 没有就没法展示、3.2 没有就没法回复、3.4/3.5 分别对应主动发起与历史补齐、"
+                 "3.7 决定能不能不改配置就加平台。另外 40 个接口都是单点增删改查，"
+                 "在上表里能查到路径与作用，需要细节时 /openapi.json 给出完整 schema——"
+                 "文档与实现同源，不会出现“文档写了但代码没有”的情况。")
 
     # ---------------------------------------------------------------- 4 鉴权
-    heading(doc, "四、鉴权与访问控制", 1)
+    heading(doc, "四、鉴权、错误与可复现验证", 1)
+    heading(doc, "4.1 两层鉴权", 2)
     body(doc, "系统有两层防护，都基于同一个 HttpOnly Cookie（uti_auth）：")
     body(doc, "第一层是账号口令。注册后口令经 PBKDF2-SHA256（20 万轮加盐）存库，登录成功后"
               "下发 Cookie，内容是 HMAC 摘要而不是口令本身，有效期 30 天。")
@@ -302,7 +319,7 @@ HTTP/1.1 401 Unauthorized
                  "还是登录页——首次部署时库里没有账号，跳注册才合理。")
 
     # ---------------------------------------------------------------- 5 错误
-    heading(doc, "五、错误处理约定", 1)
+    heading(doc, "4.2 状态码约定", 2)
     err_rows = [
         ("200", "成功", "GET 与 PATCH 的正常返回"),
         ("303", "重定向", "登录、注册成功后跳首页并下发 Cookie"),
@@ -321,7 +338,7 @@ HTTP/1.1 401 Unauthorized
                  "所以前端对 422 做了单独处理。")
 
     # ---------------------------------------------------------------- 6 可复现
-    heading(doc, "六、接口的可复现验证", 1)
+    heading(doc, "4.3 用 curl 复现任意接口", 2)
     body(doc, "所有接口都可以用 curl 复现，鉴权用一次登录拿到的 Cookie：")
     code_block(doc, """
 # 1) 登录，保存 Cookie
