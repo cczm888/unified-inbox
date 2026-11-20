@@ -67,29 +67,59 @@ async function findEditor(page) {
   });
 }
 
+/** 读右侧聊天头部的标题（用来确认到底切没切过去） */
+async function currentChatTitle(page) {
+  return await page.evaluate(() => {
+    for (const e of document.querySelectorAll("div,span")) {
+      const r = e.getBoundingClientRect();
+      if (r.left < 600 || r.left > 820) continue;
+      if (r.top < 60 || r.top > 110) continue;
+      if (r.height < 14 || r.height > 40) continue;
+      if (r.width < 40 || r.width > 320) continue;
+      const t = (e.innerText || "").trim();
+      if (t && t.length < 40) return t;
+    }
+    return "";
+  });
+}
+
 /**
- * 点会话：不用 `loc=text=`，因为它会同时匹配「会话名」和「聊天头部标题」，
- * ego 遇到多匹配直接报错。改成按几何找左栏里含该文本的行，点行中心。
+ * 点会话。两个坑：
+ *  1. `loc=text=` 会同时匹配「会话名」和「聊天头部标题」，ego 直接报多匹配；
+ *  2. 点了不等于切过去了 —— 页面默认停在第一个会话，点空/点偏都不会报错，
+ *     接着打字就发到默认会话里去了（实测踩过：消息进了「豆包工作」）。
+ * 所以点完必须回读头部标题核对，不对就重试，三次还不行就失败。
  */
 async function openChat(page, name) {
-  const hit = await page.evaluate((n) => {
-    for (const e of document.querySelectorAll("div[class]")) {
-      const r = e.getBoundingClientRect();
-      if (r.left < 150 || r.left > 220 || r.width < 350 || r.height < 45 || r.height > 90) continue;
-      const t = (e.innerText || "").replace(/\s+/g, "");
-      if (t.includes(n.replace(/\s+/g, ""))) {
-        return { cx: Math.round(r.left + r.width / 2), cy: Math.round(r.top + r.height / 2), txt: t.slice(0, 30) };
+  const norm = (s) => (s || "").replace(/\s+/g, "");
+  let lastTitle = "";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const hit = await page.evaluate((n) => {
+      for (const e of document.querySelectorAll("div[class]")) {
+        const r = e.getBoundingClientRect();
+        if (r.left < 150 || r.left > 220 || r.width < 350 || r.height < 45 || r.height > 90) continue;
+        const t = (e.innerText || "").replace(/\s+/g, "");
+        if (t.includes(n)) {
+          return { cx: Math.round(r.left + r.width / 2), cy: Math.round(r.top + r.height / 2) };
+        }
       }
-    }
-    return null;
-  }, name);
-  if (!hit) return { ok: false, error: `左栏找不到会话「${name}」` };
-  await page.evaluate(({ cx, cy }) => {
-    const el = document.elementFromPoint(cx, cy);
-    if (el) el.click();
-  }, hit);
-  await page.waitForTimeout(2600);
-  return { ok: true, hit };
+      return null;
+    }, norm(name));
+    if (!hit) return { ok: false, error: `左栏找不到会话「${name}」` };
+
+    await page.evaluate(({ cx, cy }) => {
+      const el = document.elementFromPoint(cx, cy);
+      if (!el) return;
+      el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      el.click();
+    }, hit);
+    await page.waitForTimeout(1800);
+
+    lastTitle = await currentChatTitle(page);
+    if (norm(lastTitle).includes(norm(name))) return { ok: true, hit, title: lastTitle };
+  }
+  return { ok: false, error: `点了三次，右侧标题还是「${lastTitle}」，没切到「${name}」，放弃（避免发错人）` };
 }
 
 /** 往内容可编辑区域打字：先聚焦，再用 execCommand 插入（React 受控也能收） */
