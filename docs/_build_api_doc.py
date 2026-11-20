@@ -363,7 +363,7 @@ curl -b cookie.txt http://127.0.0.1:8000/openapi.json
                  "验证文档与实现是否一致。这也意味着本文档不是手抄的——"
                  "它由同一份 OpenAPI 描述生成。")
 
-    out = DOCS / "04-接口设计.docx"
+    out = DOCS / "04_接口设计.docx"
     doc.save(out)
     print("saved:", out, out.stat().st_size, "bytes", "| total endpoints:", total)
 

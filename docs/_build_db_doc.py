@@ -218,7 +218,7 @@ def main():
                  "是这类项目最常见的翻车点。补齐字段则用幂等的 ALTER TABLE，"
                  "见 db.py 的 _ensure_columns()。")
 
-    out = DOCS / "03-数据库设计.docx"
+    out = DOCS / "03_数据库设计.docx"
     doc.save(out)
     print("saved:", out, out.stat().st_size, "bytes")
 

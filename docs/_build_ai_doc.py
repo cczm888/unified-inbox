@@ -21,7 +21,7 @@ from _docx_common import (
     table,
 )
 DOCS = Path(__file__).parent
-OUT = DOCS / "06-AI协作过程记录.docx"
+OUT = DOCS / "06_其他.docx"
 
 
 def build():

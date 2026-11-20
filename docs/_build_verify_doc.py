@@ -237,7 +237,7 @@ tests/test_services.py::test_ratelimit_degrades_open_when_redis_down PASSED [100
               "的完整闭环，四个平台中有三个完成端到端验证（飞书双向、邮箱收发、"
               "外部采集通道单向）。剩余工作集中在文档与部署验证，不在核心功能。")
 
-    out = DOCS / "05-初步验证.docx"
+    out = DOCS / "05_初步验证.docx"
     doc.save(out)
     print("saved:", out, out.stat().st_size, "bytes")
 

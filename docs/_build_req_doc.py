@@ -201,7 +201,7 @@ def main():
                  "这条测试的价值在于，新增平台时不必靠人肉检查是否漏字段——"
                  "这也是我们把“统一格式”做成可验证而非口头承诺的方式。")
 
-    out = DOCS / "01-需求分析.docx"
+    out = DOCS / "01_需求分析.docx"
     doc.save(out)
     print("saved:", out, out.stat().st_size, "bytes")
 

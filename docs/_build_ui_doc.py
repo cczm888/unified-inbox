@@ -145,7 +145,7 @@ def main():
               "纯图标按钮配文字标签而不是只有图标；配色对比度按正文可读的标准选取，"
               "状态不单靠颜色区分，也带文字（如「已回复」而不是只有一个绿点）。")
 
-    out = DOCS / "02-原型设计.docx"
+    out = DOCS / "02_原型设计.docx"
     doc.save(out)
     print("saved:", out, out.stat().st_size, "bytes")
 
