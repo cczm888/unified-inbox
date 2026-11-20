@@ -5,13 +5,13 @@ import dayjs from 'dayjs'
 import {
   api,
   attachmentUrl,
-  sendNew,
   PLATFORM_LABEL,
   PLATFORM_COLOR,
   STATUS_LABEL,
   STATUS_COLOR,
   PRIORITY_COLOR,
 } from './api'
+import NewMessageModal from './components/NewMessageModal.vue'
 
 const platforms = ref([])
 // 库里保存的平台连接（运行时接入的那些，重启后自动恢复）
@@ -265,51 +265,28 @@ async function doLogout() {
 }
 
 // ---------------- 主动发起新消息（选联系人发）----------------
+// 表单、校验、投递都搬进 components/NewMessageModal.vue 了，
+// 这里只留一个开关和「发完刷新列表」的回调。
 const newMsgOpen = ref(false)
-const sendingNew = ref(false)
-const newMsg = reactive({ platform: 'feishu', target: '', text: '', subject: '' })
 
 // 可选目标 = 已有会话（省得让人背 chat_id），也允许手输
-const newMsgTargets = computed(() =>
-  threads.value
-    .filter((t) => t.platform === newMsg.platform)
-    .map((t) => ({ value: t.chat_id, label: t.chat_title || t.chat_id })),
+const newMsgContacts = computed(() =>
+  threads.value.map((t) => ({
+    value: t.chat_id,
+    label: t.chat_title || t.chat_id,
+    platform: t.platform,
+  })),
 )
 
 function openNewMsg() {
-  newMsg.text = ''
-  newMsg.subject = ''
-  newMsg.target = ''
-  const first = platforms.value.find((p) => p.ready)
-  if (first) newMsg.platform = first.platform
   newMsgOpen.value = true
 }
 
-async function doSendNew() {
-  if (!newMsg.target.trim() || !newMsg.text.trim()) {
-    antMessage.warning('联系人和内容都要填')
-    return
-  }
-  sendingNew.value = true
-  try {
-    const body = {
-      platform: newMsg.platform,
-      target: newMsg.target.trim(),
-      text: newMsg.text.trim(),
-    }
-    if (newMsg.platform === 'email' && newMsg.subject.trim()) body.subject = newMsg.subject.trim()
-    await sendNew(body)
-    antMessage.success('已投递，稍等几秒对方就能收到')
-    newMsgOpen.value = false
-    setTimeout(() => {
-      loadThreads()
-      loadStats()
-    }, 2500)
-  } catch (e) {
-    antMessage.error('发送失败：' + (e.message || e), 8)
-  } finally {
-    sendingNew.value = false
-  }
+function onNewMsgSent() {
+  setTimeout(() => {
+    loadThreads()
+    loadStats()
+  }, 2500)
 }
 
 // ---------------- 用户身份账号（OAuth 接入） ----------------
@@ -1236,44 +1213,12 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <a-modal
+    <NewMessageModal
       v-model:open="newMsgOpen"
-      title="发起新消息"
-      :confirm-loading="sendingNew"
-      ok-text="发送"
-      cancel-text="取消"
-      @ok="doSendNew"
-    >
-      <div class="nm-form">
-        <div class="nm-row">
-          <label>平台</label>
-          <a-select v-model:value="newMsg.platform" size="small" style="width: 100%">
-            <a-select-option v-for="p in platforms" :key="p.platform" :value="p.platform" :disabled="!p.ready">
-              {{ PLATFORM_LABEL[p.platform] || p.platform }}{{ p.ready ? '' : '（未接入）' }}
-            </a-select-option>
-          </a-select>
-        </div>
-        <div class="nm-row">
-          <label>{{ newMsg.platform === 'email' ? '收件人' : '联系人' }}</label>
-          <a-auto-complete
-            v-model:value="newMsg.target"
-            :options="newMsgTargets"
-            size="small"
-            style="width: 100%"
-            :placeholder="newMsg.platform === 'email' ? 'someone@example.com' : '从已有会话里选，或直接粘 chat_id'"
-          />
-        </div>
-        <div v-if="newMsg.platform === 'email'" class="nm-row">
-          <label>主题</label>
-          <a-input v-model:value="newMsg.subject" size="small" placeholder="留空自动取正文首行" />
-        </div>
-        <div class="nm-row">
-          <label>内容</label>
-          <a-textarea v-model:value="newMsg.text" :rows="5" placeholder="要发出去的话…" />
-        </div>
-        <div class="nm-tip">发出后走 Outbox 投递，失败会自动重试；成功后这条会出现在收件箱里。</div>
-      </div>
-    </a-modal>
+      :platforms="platforms"
+      :contacts="newMsgContacts"
+      @sent="onNewMsgSent"
+    />
 
     <a-drawer
       v-model:open="accountsOpen"
