@@ -99,7 +99,7 @@ def main():
         for method, p, short in items:
             rows.append((gname, method, p, short))
     table(doc, ["模块", "方法", "路径", "说明"], rows, widths=[3.0, 1.8, 7.4, 5.0])
-    caption(doc, f"表 2-1　接口清单（共 {total} 个）。按模块聚合后可以看出接口分布："
+    caption(doc, f"表 2-1 接口清单（共 {total} 个）。按模块聚合后可以看出接口分布："
                  "收件箱与消息模块占了一半以上，因为它的每个用户动作都对应一个独立接口"
                  "（回复、发文件、转待办、改状态、改优先级、批量改、标已读、拉历史、主动发消息）。"
                  "这种“一个动作一个接口”的拆法牺牲了接口数量，换来的是权限控制和错误处理"
@@ -248,12 +248,12 @@ def main():
         if not items:
             continue
         n += 1
-        heading(doc, f"3.{n}　{gname}", 2)
+        heading(doc, f"3.{n} {gname}", 2)
         body(doc, gdesc + f"。共 {len(items)} 个接口。")
 
         for path, m, op in sorted(items, key=lambda x: (x[0], x[1])):
             short, long_desc = describe(op)
-            heading(doc, f"{METHOD_CN[m]}　{path.replace('/api/v1', '')}", 3)
+            heading(doc, f"{METHOD_CN[m]} {path.replace('/api/v1', '')}", 3)
             detail = DETAIL.get(path)
             if detail:
                 summary, params, resp, errs = detail
@@ -297,7 +297,7 @@ def main():
 HTTP/1.1 401 Unauthorized
 {"detail": "未登录：请访问 /api/v1/auth/login 输入访问口令", "need_login": true, "has_user": true}
 """)
-    caption(doc, "图 4-1　未登录响应示例。把“需要登录”做成结构化字段而不是让人去解析文案，"
+    caption(doc, "图 4-1 未登录响应示例。把“需要登录”做成结构化字段而不是让人去解析文案，"
                  "原因是前端要据此决定跳登录页还是弹提示。has_user 字段告诉前端该跳注册页"
                  "还是登录页——首次部署时库里没有账号，跳注册才合理。")
 
@@ -314,7 +314,7 @@ HTTP/1.1 401 Unauthorized
         ("422", "结构错误", "请求体不符合 schema；detail 是数组，逐字段说明哪里不对"),
     ]
     table(doc, ["状态码", "含义", "使用场景"], err_rows, widths=[2.4, 2.8, 12.0])
-    caption(doc, "表 5-1　状态码约定。刻意区分 400 与 422：前者是“参数合法但业务不允许”，"
+    caption(doc, "表 5-1 状态码约定。刻意区分 400 与 422：前者是“参数合法但业务不允许”，"
                  "detail 是能直接给用户看的中文；后者是“请求结构不对”，detail 是程序报错。"
                  "前端据此决定是弹提示还是记日志。实现过程中踩过一个坑——422 的 detail "
                  "是数组，直接塞进 Error 的 message 会显示成 [object Object]，"
@@ -341,7 +341,7 @@ curl -b cookie.txt -X POST "http://127.0.0.1:8000/api/v1/inbox/backfill?platform
 # 5) 完整接口描述（OpenAPI 3.1）
 curl -b cookie.txt http://127.0.0.1:8000/openapi.json
 """)
-    caption(doc, "图 6-1　接口复现命令。第五条最有价值：服务在跑的时候，"
+    caption(doc, "图 6-1 接口复现命令。第五条最有价值：服务在跑的时候，"
                  "/openapi.json 会返回完整的机器可读接口描述，评审可以拿它和本文档逐条对照，"
                  "验证文档与实现是否一致。这也意味着本文档不是手抄的——"
                  "它由同一份 OpenAPI 描述生成。")

@@ -95,7 +95,7 @@ def main():
         cn, desc = META[name]
         rows.append((name, cn, f"{schema[name]['rows']:,}", desc))
     table(doc, ["表名", "中文名", "当前行数", "职责"], rows, widths=[3.2, 2.2, 1.6, 8.0])
-    caption(doc, "表 1-1　数据表清单。当前行数取自本地开发库（SQLite），"
+    caption(doc, "表 1-1 数据表清单。当前行数取自本地开发库（SQLite），"
                  "用于说明各表在演示阶段的实际使用情况。可以看到 message 与 outbox "
                  "是数据量最大的两张表，符合“消息系统以流水为主”的特征；platform_account "
                  "与 user_account 行数较少，因为它们是配置类数据，每个平台只需一行。")
@@ -115,7 +115,7 @@ def main():
     for i, name in enumerate(ORDER, start=1):
         cn, desc = META[name]
         info = schema[name]
-        heading(doc, f"2.{i}　{name}（{cn}）", 2)
+        heading(doc, f"2.{i} {name}（{cn}）", 2)
         body(doc, desc)
 
         rows = []
@@ -135,7 +135,7 @@ def main():
                 c["default"] if c["default"] is not None else "—",
             ))
         table(doc, ["字段", "类型", "约束", "默认值"], rows, widths=[4.2, 5.4, 2.6, 3.0])
-        caption(doc, f"表 2-{i}　{name} 表字段定义。共 {len(info['cols'])} 个字段；"
+        caption(doc, f"表 2-{i} {name} 表字段定义。共 {len(info['cols'])} 个字段；"
                      f"当前该表有 {info['rows']:,} 行数据。"
                      + ("外键指向：" + "、".join(f"{a} → {b}" for a, b in info["fks"]) + "。" if info["fks"] else "")
                      + ("索引：" + "、".join(n for n, _u in info["idx"]) + "。" if info["idx"] else ""))
@@ -153,7 +153,7 @@ def main():
         ("message.account_id", "user_account.id", "SET NULL", "该消息属于哪个用户身份（应用身份为 NULL）"),
     ]
     table(doc, ["外键字段", "指向", "删除策略", "说明"], rel_rows, widths=[4.6, 3.4, 2.2, 6.8])
-    caption(doc, "表 3-1　外键与删除策略。所有外键统一使用 SET NULL 而不是 CASCADE，"
+    caption(doc, "表 3-1 外键与删除策略。所有外键统一使用 SET NULL 而不是 CASCADE，"
                  "原因是消息是审计凭证：撤销一个平台授权不应该连带删掉已经收到的历史消息。"
                  "早期版本这里用的是 CASCADE，第三方代码审查指出后已改正。")
 
@@ -164,7 +164,7 @@ def main():
         ("uq_user_account_platform_user", "user_account(platform, user_id)", "一个平台的一个用户身份只保留一份授权"),
     ]
     table(doc, ["约束名", "字段", "作用"], uniq_rows, widths=[5.0, 5.2, 6.8])
-    caption(doc, "表 3-2　唯一约束。uq_message_platform_msgid 是幂等性的唯一保证："
+    caption(doc, "表 3-2 唯一约束。uq_message_platform_msgid 是幂等性的唯一保证："
                  "所有写入路径（实时事件、历史回填、外部采集器）都用 INSERT ... ON CONFLICT DO NOTHING "
                  "并指定这个索引，因此同一条平台消息重复到达时只会被静默忽略，不会产生重复行。")
 
@@ -179,7 +179,7 @@ def main():
         ("ix_message_account", "message(account_id)", "按用户身份查消息（用户身份通道预留）"),
     ]
     table(doc, ["索引名", "覆盖字段", "服务的查询"], idx_rows, widths=[5.4, 5.0, 6.6])
-    caption(doc, "表 4-1　索引清单。其中 ix_outbox_next_retry 最关键：出站 worker 用"
+    caption(doc, "表 4-1 索引清单。其中 ix_outbox_next_retry 最关键：出站 worker 用"
                  "“UPDATE ... WHERE id IN (SELECT ... ORDER BY id LIMIT n FOR UPDATE SKIP LOCKED)”"
                  "批量领取任务，没有这个索引会在任务堆积时全表扫描。")
 
@@ -199,7 +199,7 @@ def main():
               ↓  用户在网页上手动回复
 ⑤ 同一路径，另外写 feedback（如果人改了紧急度/状态）
 """)
-    caption(doc, "图 5-1　消息处理链路。这张图说明了为什么入站与出站要共用一张 message 表："
+    caption(doc, "图 5-1 消息处理链路。这张图说明了为什么入站与出站要共用一张 message 表："
                  "第②步和第④步写入的是同一张表的不同方向行，界面上按 created_at 排序即可还原"
                  "完整对话。event_log 与 feedback 是两条旁路：前者为排查保留原始报文，"
                  "后者为人机协同保留修正痕迹。")
@@ -215,7 +215,7 @@ def main():
         ("时间差", "julianday() / extract(epoch from)", "平均处理时长的算法不同"),
     ]
     table(doc, ["差异点", "处理方式", "原因"], diff_rows, widths=[3.4, 6.6, 7.0])
-    caption(doc, "表 6-1　SQLite 与 PostgreSQL 的适配点。采用“同一模型 + 运行时分支”"
+    caption(doc, "表 6-1 SQLite 与 PostgreSQL 的适配点。采用“同一模型 + 运行时分支”"
                  "而不是两套 SQL 文件，是为了避免迁移脚本漂移——本地能跑、容器里跑不起来，"
                  "是这类项目最常见的翻车点。补齐字段则用幂等的 ALTER TABLE，"
                  "见 db.py 的 _ensure_columns()。")
