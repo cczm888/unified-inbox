@@ -176,7 +176,47 @@ libEGL.dll / libGLESv2.dll          ← OpenGL 直接绘制
 
 主窗口和所有子窗口都是 0。`MMUIRenderSubWindowHW` 是微信自研的渲染层（MMUI = 微信 UI），Qt 5.15.14 外壳 + 自绘内容。
 
-### 7.3 调试端口
+### 7.3 实测 MSAA（比 UIA 更老的接口）
+
+UIA 是 2005 年之后的接口，有些应用只实现了更早的 MSAA（`IAccessible`）。
+Chromium 系一律支持 MSAA，所以这一项必须单独测——不然结论站不住。
+
+探测方式（`oleacc.dll` 的 `AccessibleObjectFromWindow`，绕过 UIA 直接拿 COM 接口）：
+
+```python
+import comtypes, comtypes.client
+comtypes.client.GetModule("oleacc.dll")
+from comtypes.gen.Accessibility import IAccessible
+
+p = ctypes.POINTER(IAccessible)()
+oleacc.AccessibleObjectFromWindow(
+    hwnd, OBJID_CLIENT,            # 0xFFFFFFFC
+    ctypes.byref(IAccessible._iid_),
+    ctypes.byref(p))
+```
+
+结果：
+
+```
+hwnd=659002  title='微信'  cls=Qt51514QWindowIcon
+  MSAA childCount=2   name='微信'
+
+  遍历 accChild(1) / accChild(2)：
+    → 两个都是简单元素（accChild 返回 None）
+    → accName(i) 读不出内容，accRole(i) 也读不出
+```
+
+**childCount=2 比钉钉的 0 好看，但实际等价于 0。** 这两个是窗口级的空壳节点，
+往下再没有任何可读内容。Qt 默认只向辅助技术暴露窗口边界，不暴露控件树——
+Qt 的 MSAA provider 需要应用显式加载 `qwindows.dll` 的无障碍插件才会填充内容。
+
+所以：**UIA 是空，MSAA 也是空**。两条腿都断。
+
+区别在于钉钉的 0 是"CEF renderer 没开 accessibility"，微信的 2 是"Qt 没加载
+无障碍插件"——成因不同，结果一样：任何走系统辅助接口的工具（Power Automate /
+UiPath / 影刀 / uiautomation / pywinauto）看到的都是空窗户。
+
+### 7.4 调试端口
 
 ```
 === 监听端口 ===
@@ -187,7 +227,7 @@ libEGL.dll / libGLESv2.dll          ← OpenGL 直接绘制
 
 不是 Chromium 系，没有 CDP 可用。
 
-### 7.4 官方接口
+### 7.5 官方接口
 
 | 接口 | 能否读个人消息 | 门槛 |
 |---|---|---|
@@ -198,8 +238,37 @@ libEGL.dll / libGLESv2.dll          ← OpenGL 直接绘制
 
 微信是三家平台里唯一**连"合规但受限"的接口都不给个人**的。
 
-### 7.5 结论
+### 7.6 结论
 
-微信不做。不是技术不行，是**没有任何一条合规路径**：自绘界面读不到、无调试端口、无个人可用 API。第三方协议逆向会封号且违约。
+微信不做。不是技术不行，是**没有任何一条合规路径**：自绘界面读不到（UIA 空、MSAA 只有两个空壳节点）、无调试端口、无个人可用 API。第三方协议逆向会封号且违约。
 
-探查脚本：`scripts/probe-weixin-uia.py`
+探查脚本：`scripts/probe-weixin-uia.py`、`scripts/probe-weixin-msaa.py`
+
+---
+
+## 八、三家平台横向对比
+
+把三次探查的结论并排放，才看得出"为什么只有飞书做成了"。
+
+| 维度 | 飞书 | 钉钉 | 微信 |
+|---|---|---|---|
+| 网页版能用吗 | ✅ `icnbvv0z1c24.user.feishu.cn` | ❌ 已关停（跳「系统维护中」） | ❌ 2017 年起限制 |
+| 网页版有输入框吗 | ⚠️ 机器人通知类会话没有，真人会话有 | — | — |
+| 客户端 UIA | ✅ Electron，可读 | ❌ 0 节点 | ❌ 0 节点 |
+| 客户端 MSAA | ✅ | ❌ `Chrome_WidgetWin_0` childCount=0 | ⚠️ childCount=2，但都是空壳 |
+| 客户端 CDP | — | ⚠️ 能连，只有 `about:blank` 和 `chatbox` | ❌ 非 Chromium |
+| 官方 API（个人能拿） | ✅ 自建应用，免审权限即时生效 | ⚠️ 需自建组织成为管理员 | ❌ 全部需企业资质 |
+| 官方 API 能读历史消息 | ✅ `GET /im/v1/messages` 200 | ❌ 无公开接口（要付费「会话内容存档」） | ❌ |
+| 我们最终用的方式 | 官方 API + 网页 RPA 双通道 | 代码就绪，等用户建组织 | 不做 |
+
+三条结论：
+
+**第一，"读不到控件"是应用的单方面选择，不是工具的能力问题。**
+钉钉是 CEF renderer 没启用 accessibility，微信是 Qt 没加载无障碍插件。两者成因不同，结果一样：任何走系统辅助接口的工具看到的都是空窗口。换 Power Automate、UiPath、影刀都改不了——它们用的是同一套接口。
+
+**第二，飞书能做成的关键不是它技术更好，是它给了 RPA 一条退路。**
+官方 API 拿不到全量时，网页版还能用、真人会话还有输入框、DOM 还能读出标题来核对。钉钉网页版直接关停，微信连网页版都没有——**没有退路的平台，RPA 就是赌博**。
+
+**第三，能不能验证"发给了谁"，是 RPA 方案的分水岭。**
+飞书靠回读标题比对修好了发错人（见 `05-初步验证.docx` 3.6 节）。钉钉和微信的标题是像素，比对只能靠 OCR，认错一个字就发给错误的真人。赛题要求"平台内个体用户之间"，这个风险不能接。
+
