@@ -138,3 +138,68 @@ targets  = 2
 | `scripts/probe-dingtalk-targets.mjs` | 通过 browser ws 翻全部 target |
 
 这些都留在仓库里，评审若问"为什么钉钉没做成"，跑一遍就能复现结论。
+## 七、微信（补充探查）
+
+同样实测了，比钉钉更彻底——三条路都不通。
+
+### 7.1 客户端技术栈
+
+安装目录 `C:\Program Files\Tencent\Weixin\4.1.15.13\`：
+
+```
+RadiumWMPF.bin      432,405,783 B   ← 微信自研跨平台 UI 框架
+Weixin.dll          201,552,944 B
+XPlayer.bin          66,471,101 B
+WeChatOcr.bin        51,896,993 B   ← 自带 OCR（它自己就在做图像识别）
+XEditor.bin          23,388,262 B
+libEGL.dll / libGLESv2.dll          ← OpenGL 直接绘制
+```
+
+没有 `libcef.dll`、没有 `app.asar`、没有 `icudtl.dat`、没有 `resources.pak`。
+
+### 7.2 实测 UIA
+
+```
+=== 微信窗口 ===
+  hwnd=2884470 title='微信' cls='Qt51514QWindowIcon'
+
+=== 环境对照（cmd 窗口）===
+  CASCADIA_HOSTING_WINDOW_CLASS children=1        ← 环境正常
+
+=== 微信主窗口 ===
+  UIA children = 0
+
+=== 子窗口 ===
+  Qt51514QWindowIcon        'Weixin'                 UIA children=0
+  MMUIRenderSubWindowHW     'MMUIRenderSubWindowHW'  UIA children=0
+```
+
+主窗口和所有子窗口都是 0。`MMUIRenderSubWindowHW` 是微信自研的渲染层（MMUI = 微信 UI），Qt 5.15.14 外壳 + 自绘内容。
+
+### 7.3 调试端口
+
+```
+=== 监听端口 ===
+  无监听
+=== 命令行 ===
+  pid=32440 "C:\Program Files\Tencent\Weixin\Weixin.exe"     ← 无 --remote-debugging-port
+```
+
+不是 Chromium 系，没有 CDP 可用。
+
+### 7.4 官方接口
+
+| 接口 | 能否读个人消息 | 门槛 |
+|---|---|---|
+| 微信公众号 | ✗ 只能被动回复关注者（48 小时窗口） | 企业主体认证 |
+| 企业微信 | ✗ 只能读企业内成员 | 企业认证 |
+| 微信个人号 | 无官方 API | — |
+| 微信网页版 | 2017 年起限制，现基本不可用 | — |
+
+微信是三家平台里唯一**连"合规但受限"的接口都不给个人**的。
+
+### 7.5 结论
+
+微信不做。不是技术不行，是**没有任何一条合规路径**：自绘界面读不到、无调试端口、无个人可用 API。第三方协议逆向会封号且违约。
+
+探查脚本：`scripts/probe-weixin-uia.py`
