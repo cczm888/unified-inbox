@@ -10,6 +10,7 @@ from pathlib import Path
 from docx.shared import Pt, RGBColor
 
 from _docx_common import (
+    body,
     caption,
     code_block,
     cover_and_toc,
@@ -28,13 +29,34 @@ def build():
     doc = new_doc()
     cover_and_toc(
         doc,
-        title="AI 辅助开发过程记录",
-        subtitle="多平台统一消息收件箱 · 赛题 A",
+        title="其他材料",
+        subtitle="代码仓库 · 部署方式 · AI 辅助开发过程记录（赛题 A）",
     )
     start_body_section(doc)
 
+    # ---------------------------------------------------------------- 一
+    heading(doc, "一、代码仓库与部署", 1)
+    body(doc, "本项目全部源码公开，可直接克隆运行。")
+    repo_rows = [
+        ("代码仓库", "https://github.com/cczm888/unified-inbox"),
+        ("许可证", "MIT"),
+        ("持续集成", "GitHub Actions：后端 pytest + 前端构建，每次提交自动跑"),
+        ("本地运行", "scripts/start-ui.ps1（双击即用，自动拉起前后端并打开浏览器）"),
+        ("容器部署", "docker compose up -d --build（四容器：api / db / redis / web）"),
+        ("技术栈", "后端 FastAPI + SQLAlchemy(async) + PostgreSQL/SQLite；前端 Vue 3 + Vite"),
+        ("代码规模", "Python 34 文件约 4,800 行；前端 8 文件约 2,600 行；46 条路由；26 项自动化测试"),
+    ]
+    table(doc, ["项目", "说明"], repo_rows, widths=[3.0, 12.0], font_size=9)
+    caption(doc, "表 1-1 代码仓库与运行方式。本地运行不依赖 Docker（SQLite 直跑），"
+                 "容器部署用于验证交付完整性——两条路径都在真机上跑通过。")
+
+    body(doc, "本文件后面几章不是代码说明，而是一份开发过程记录：这个项目从选题到交付"
+              "大量使用了 AI 辅助（需求澄清、方案评审、代码生成、缺陷排查）。"
+              "官方要求“使用 AI 必须附对话过程链接”，所以把过程整理在下面，"
+              "包括 AI 判断错、被人纠正的部分。")
+
     # ---------------- 一 ----------------
-    heading(doc, "一、为什么写这份文档", 1)
+    heading(doc, "二、为什么写这份文档", 1)
     para(
         doc,
         "官方宣讲会中有一条硬性要求：“严禁直接提交 AI 生成结果。使用 AI 辅助设计必须附上"
@@ -48,7 +70,7 @@ def build():
     )
 
     # ---------------- 二 ----------------
-    heading(doc, "二、AI 在本项目中的实际作用边界", 1)
+    heading(doc, "三、AI 在本项目中的实际作用边界", 1)
     para(
         doc,
         "把“谁做了什么”列清楚，是判断 AI 参与程度的前提。本项目的人员与 AI 分工如下表。",
@@ -81,14 +103,14 @@ def build():
     )
 
     # ---------------- 三 ----------------
-    heading(doc, "三、四次 AI 判断错误与纠正过程", 1)
+    heading(doc, "四、四次 AI 判断错误与纠正过程", 1)
     para(
         doc,
         "如果 AI 只是“听话照做”，反而不值得信任。真正能说明过程真实的，"
         "是下面这些 AI 说错、人被追问后改对的节点。四个案例都来自真实对话记录，未做美化。",
     )
 
-    heading(doc, "3.1  赛题是否要求“读取用户全部聊天”", 2)
+    heading(doc, "4.1  赛题是否要求“读取用户全部聊天”", 2)
     para(doc, "AI 最初的判断（错）：把“用户身份读不到消息历史”当成必须攻克的技术缺口，"
               "并据此建议申请企业认证、走付费的会话存档方案。")
     para(
@@ -122,7 +144,7 @@ def build():
         bold=True,
     )
 
-    heading(doc, "3.2  飞书用户身份到底能不能读消息", 2)
+    heading(doc, "4.2  飞书用户身份到底能不能读消息", 2)
     para(doc, "AI 最初的表述（不严谨）：搜不到 im:message.*:get_as_user 权限，"
               "就直接给出“飞书不开放”的结论。")
     para(
@@ -174,7 +196,7 @@ def build():
         "最终结论连同证据链表写入了《飞书用户身份接入结论》。",
     )
 
-    heading(doc, "3.3  RPA 算不算合规接入方式", 2)
+    heading(doc, "4.3  RPA 算不算合规接入方式", 2)
     para(doc, "AI 最初的判断（错）：把飞书网页版 DOM 采集器标成“不计入赛题平台数，只是补充通道”，"
               "理由是自己认为“必须是官方开放 API 或 Webhook”。")
     para(doc, "人的动作：发来官方宣讲会纪要链接。纪要原文：", italic=True)
@@ -198,7 +220,7 @@ def build():
         bold=True,
     )
 
-    heading(doc, "3.4  出站气泡“一个框套着另一个框”", 2)
+    heading(doc, "4.4  出站气泡“一个框套着另一个框”", 2)
     para(doc, "人的反馈：直接发截图，只说一句“一个框套着另一个框”。", italic=True)
     para(doc, "AI 的排查过程：")
     para(
@@ -232,7 +254,7 @@ def build():
     )
 
     # ---------------- 四 ----------------
-    heading(doc, "四、AI 自己踩的坑", 1)
+    heading(doc, "五、AI 自己踩的坑", 1)
     para(
         doc,
         "下面这些是 AI 在实现过程中犯的、由构建或运行结果直接暴露的错误。"
@@ -262,7 +284,7 @@ def build():
     )
 
     # ---------------- 五 ----------------
-    heading(doc, "五、AI 提出、被人采纳的关键设计决定", 1)
+    heading(doc, "六、AI 提出、被人采纳的关键设计决定", 1)
     para(doc, "并非只有纠错。下面这些是 AI 提出、经人确认后落地的判断：")
     items = [
         ("决定能见范围的是“身份”，而不是“API 还是 Webhook”",
@@ -283,7 +305,7 @@ def build():
         para(doc, f"{i}. {t}。{d}")
 
     # ---------------- 六 ----------------
-    heading(doc, "六、验证方式：每个结论都有可复现的证据", 1)
+    heading(doc, "七、验证方式：每个结论都有可复现的证据", 1)
     para(
         doc,
         "本项目所有“已完成”的判断都不是口头声明。下表是主要声明与对应证据的对照，"
@@ -315,7 +337,7 @@ def build():
     )
 
     # ---------------- 七 ----------------
-    heading(doc, "七、对话过程链接", 1)
+    heading(doc, "八、对话过程链接", 1)
     para(
         doc,
         "开发全过程在一个持续的 AI 编程会话中完成，包含 100 余轮交互。"
@@ -345,7 +367,7 @@ def build():
     )
 
     # ---------------- 八 ----------------
-    heading(doc, "八、对“严禁直接提交 AI 生成结果”的执行", 1)
+    heading(doc, "九、对“严禁直接提交 AI 生成结果”的执行", 1)
     para(doc, "我们的做法可以归纳为四条：")
     para(
         doc,

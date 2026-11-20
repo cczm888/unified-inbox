@@ -98,8 +98,8 @@ def build_xlsx() -> pathlib.Path:
 
     ws.merge_cells("A2:E2")
     c = ws["A2"]
-    c.value = ("队伍名称：【待填】    成员：【待填】    指导教师：【待填】    "
-               "提交日期：2026-11-22")
+    c.value = ("参赛队伍：19 组    成员：陈志明、李家杰    指导教师：无    "
+               "提交日期：2026 年 11 月 22 日")
     c.font = Font(name="微软雅黑", size=10, color="5A6474")
     c.alignment = Alignment(horizontal="left", vertical="center")
     ws.row_dimensions[2].height = 24
