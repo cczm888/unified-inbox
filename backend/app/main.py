@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
 
 from .adapters import build_registry, registry
-from .api import auth, autoreply, inbox, ingest, platforms, stats, todos
+from .api import auth, autoreply, inbox, ingest, platforms, rpa, stats, todos
 from .config import settings
 from .db import SessionLocal, close_all, init_db
 from .models import AppUser
@@ -184,6 +184,7 @@ app.include_router(platforms.router)
 app.include_router(stats.router)
 app.include_router(auth.router)
 app.include_router(autoreply.router)
+app.include_router(rpa.router)
 
 
 @app.get("/healthz", tags=["infra"])

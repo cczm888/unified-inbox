@@ -157,7 +157,7 @@ class NewMessageIn(BaseModel):
     目标语义按平台不同：飞书/Telegram 是 chat_id，邮箱是收件人地址。
     """
 
-    platform: str = Field(pattern="^(feishu|telegram|email|dingtalk)$")
+    platform: str = Field(pattern="^(feishu|telegram|email|dingtalk|feishu_web)$")
     target: str = Field(min_length=1, max_length=256)
     text: str = Field(min_length=1, max_length=8000)
     subject: str | None = Field(default=None, max_length=200)  # 仅邮箱用

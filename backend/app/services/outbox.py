@@ -29,6 +29,11 @@ from . import ratelimit
 
 log = logging.getLogger(__name__)
 
+# 没有官方 API、只能靠浏览器自动化（RPA）操作网页版的平台。
+# 这类平台的消息由外部采集器推进来（POST /api/v1/ingest），
+# 发出去也得由同一个采集器代劳——后端只负责把任务挂出来。
+RPA_PLATFORMS = frozenset({"feishu_web"})
+
 def _claim_sql(dialect: str = "postgresql"):
     """抢占一批待发任务。
 
@@ -149,6 +154,13 @@ async def _dispatch(row: dict) -> None:
     adapter = registry.get(platform)
     payload = row["payload"] or {}
 
+    # RPA 通道：没有官方接口，靠浏览器自动化操作网页版。
+    # 后端不可能直接驱动浏览器，所以这里把任务挂到 rpa 状态，
+    # 等采集器（scripts/rpa-send.mjs）轮询 /api/v1/rpa/pending 取走再回报。
+    if platform in RPA_PLATFORMS:
+        await _mark_rpa(row)
+        return
+
     if adapter is None:
         await _mark_failed(row, f"平台 {platform} 未启用")
         return
@@ -250,6 +262,77 @@ async def _requeue(row: dict, reason: str, delay: float) -> None:
             },
         )
         await session.commit()
+
+
+async def _mark_rpa(row: dict) -> None:
+    """把任务交给 RPA 采集器，不再由后端 worker 接管。
+
+    为什么不复用 sending：sending 是"worker 正在发"，会被 recover_stale 在
+    重启时无条件捞回 queued；rpa 是"等人来领"，重启后应该保持原样。
+    """
+    async with SessionLocal() as session:
+        await session.execute(
+            text("UPDATE outbox SET status='rpa', last_error=NULL WHERE id=:id"),
+            {"id": row["id"]},
+        )
+        await session.commit()
+    log.info("outbox id=%s 平台 %s 无官方接口，转 RPA 通道待采集器领取", row["id"], row["platform"])
+
+
+async def list_rpa_pending(limit: int = 10) -> list[dict]:
+    """给采集器取的待发任务。"""
+    async with SessionLocal() as session:
+        rows = await session.execute(
+            text(
+                "SELECT id, platform, target_chat, payload, parent_message_id "
+                "FROM outbox WHERE status='rpa' ORDER BY id LIMIT :lim"
+            ),
+            {"lim": limit},
+        )
+        out = []
+        for r in rows.fetchall():
+            d = dict(r._mapping)
+            p = d.get("payload")
+            if isinstance(p, (str, bytes)):
+                try:
+                    p = json.loads(p)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    p = {}
+            d["payload"] = p or {}
+            out.append(d)
+        return out
+
+
+async def ack_rpa(outbox_id: int, *, ok: bool, platform_msg_id: str | None = None, error: str | None = None) -> bool:
+    """采集器回报：发成功了还是失败了。
+
+    成功走 _mark_sent，让出站消息照常落库、父消息照常标 replied ——
+    这样 RPA 发出去的消息和官方接口发的，在收件箱里长得一模一样。
+    """
+    async with SessionLocal() as session:
+        row = await session.execute(
+            text(
+                "SELECT id, platform, target_chat, payload, attempts, parent_message_id "
+                "FROM outbox WHERE id=:id AND status='rpa'"
+            ),
+            {"id": outbox_id},
+        )
+        r = row.fetchone()
+        if r is None:
+            return False
+        d = dict(r._mapping)
+        p = d.get("payload")
+        if isinstance(p, (str, bytes)):
+            try:
+                p = json.loads(p)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                p = {}
+        d["payload"] = p or {}
+    if ok:
+        await _mark_sent(d, platform_msg_id)
+    else:
+        await _mark_failed(d, error or "RPA 发送失败")
+    return True
 
 
 async def _mark_failed(row: dict, error: str) -> None:

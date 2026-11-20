@@ -658,7 +658,9 @@ async def send_new(
     """
     platform = body.platform
     adapter = registry.get(platform)
-    if adapter is None:
+    # RPA 平台（如飞书网页版）没有适配器——它靠浏览器自动化操作，
+    # 任务入队后由采集器领取，所以这里不能因为 registry 里没有就拒绝。
+    if adapter is None and platform not in outbox.RPA_PLATFORMS:
         raise HTTPException(status_code=400, detail=f"{platform} 当前未接入，请先在「账号」里接入")
 
     target = body.target.strip()
