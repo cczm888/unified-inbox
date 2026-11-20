@@ -53,15 +53,22 @@ def line_spacing(paragraph, value=1.5):
     pf.space_after = Pt(6)
 
 
-def body(doc, text, indent=True, size=10.5, bold=False, align=None):
+def body(doc, text, indent=True, size=10.5, bold=False, align=None, italic=False):
     p = doc.add_paragraph()
     line_spacing(p)
     if indent:
         p.paragraph_format.first_line_indent = Pt(21)
     if align is not None:
         p.alignment = align
-    set_run_font(p.add_run(text), size=size, bold=bold)
+    run = p.add_run(text)
+    set_run_font(run, size=size, bold=bold)
+    if italic:
+        run.italic = True
     return p
+
+
+# 部分脚本里叫 para，语义相同，给个别名省得两份调用风格
+para = body
 
 
 def heading(doc, text, level=1):
@@ -75,8 +82,15 @@ def heading(doc, text, level=1):
     return h
 
 
-def caption(doc, text):
-    """图表的编号 + 说明（官方要求每个图表附 100-200 字说明）。"""
+def caption(doc, text, note=None):
+    """图表的编号 + 说明（官方要求每个图表附 100-200 字说明）。
+
+    支持两种叫法：caption(doc, "表 1　内容") 或 caption(doc, "表 1", "内容")。
+    """
+    if note:
+        # 用半角空格而不是全角空格：编号里带 ASCII 数字（如「表 2-1」），
+        # 全角空格紧跟 ASCII 时，Word 会按西文字体找字形，找不到就画成豆腐块。
+        text = f"{text}  {note}"
     p = doc.add_paragraph()
     line_spacing(p, 1.15)
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
