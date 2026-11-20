@@ -10,11 +10,35 @@ function goLogin() {
   window.location.href = '/api/v1/auth/login'
 }
 
+// 后端 8 秒没响应就当失败。不设超时的话，后端卡住时界面会一直转圈，
+// 用户看到的是「点了没反应」，比报错更难排查。
+const DEFAULT_TIMEOUT = 8000
+
 async function request(path, options = {}) {
-  const resp = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
+  const { timeout = DEFAULT_TIMEOUT, ...rest } = options
+
+  // AbortSignal.timeout 在旧浏览器上没有，缺了就退化成「不超时」，不影响功能
+  let signal
+  try {
+    signal = AbortSignal.timeout(timeout)
+  } catch (_) {
+    signal = undefined
+  }
+
+  let resp
+  try {
+    resp = await fetch(BASE + path, {
+      signal,
+      ...rest,
+      headers: { 'Content-Type': 'application/json', ...(rest.headers || {}) },
+    })
+  } catch (e) {
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+      throw new Error(`请求超时（${Math.round(timeout / 1000)} 秒没响应），后端可能卡住了`)
+    }
+    throw new Error('连不上后端：' + (e.message || e))
+  }
+
   if (resp.status === 401) {
     goLogin()
     throw new Error('未登录')
@@ -23,8 +47,17 @@ async function request(path, options = {}) {
     let detail = resp.statusText
     try {
       const body = await resp.json()
-      detail = body.detail || JSON.stringify(body)
+      detail = body.detail ?? body
     } catch (_) { /* 忽略非 JSON 响应 */ }
+    // FastAPI 的 422 校验错误里 detail 是数组，直接塞进 Error 会显示成 [object Object]，
+    // 等于把真正的错误信息藏起来了 —— 这里摊平成「字段: 原因」。
+    if (Array.isArray(detail)) {
+      detail = detail
+        .map((d) => `${(d.loc || []).slice(1).join('.') || 'body'}: ${d.msg || d}`)
+        .join('；')
+    } else if (detail && typeof detail === 'object') {
+      detail = JSON.stringify(detail)
+    }
     throw new Error(detail)
   }
   if (resp.status === 204) return null
