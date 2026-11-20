@@ -49,3 +49,5 @@ logs/
 # AI 会话导出是运行时产物，体积大且随时可重生成，不入库
 ai-session-export/*.md
 !ai-session-export/README.md
+
+docker-compose.local.yml

@@ -7,9 +7,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /srv
 
+# pip 源可覆盖：国内直连 pypi.org 常常几十秒超时，构建会卡住
+# 想用官方源：docker compose build --build-arg PIP_INDEX=https://pypi.org/simple
+ARG PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+
 # 先装依赖，利用镜像层缓存
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -i "$PIP_INDEX" -r requirements.txt
 
 COPY app ./app
 COPY sql ./sql

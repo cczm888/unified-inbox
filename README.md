@@ -198,4 +198,79 @@ cd web && npm run build                # vite build 成功，dist/ 产出
 | `vite build` 报 `esbuild ... Access is denied` | esbuild 在 `%TEMP%` 建临时文件被拦 | 把 `TEMP`/`TMP` 指到项目内目录后再 build |
 | `npm install` 报 `EALLOWSCRIPTS` | 某些 npm 发行版启用了依赖脚本白名单，esbuild 的 postinstall 被拒 | 在 `package.json` 加 `"allowScripts": {"esbuild": true}`，或设 `npm_config_allow_scripts` 前明确放行 |
 | `ImportError: SQLAlchemy asyncio requires greenlet` | 装的是裸 `sqlalchemy` | 依赖已声明为 `sqlalchemy[asyncio]`，重装即可 |
+---
 
+## 11. Docker 部署（2026-11-20 实测通过）
+
+四个容器同时起来，飞书长连接在**容器内**正常建立：
+
+```
+NAME                     STATUS
+-*-api-1     Up   0.0.0.0:8000->8000/tcp
+-*-db-1      Up (healthy)   5432/tcp
+-*-redis-1   Up (healthy)   6379/tcp
+-*-web-1     Up   0.0.0.0:8080->80/tcp
+```
+
+容器内日志的关键几行：
+
+```
+=== Unified Inbox · 多平台连接器 启动 (dev) ===
+账号体系：未初始化（首个访问者可注册）
+[feishu] adapter started
+outbox worker-0 started
+outbox worker-1 started
+INFO: Application startup complete.
+INFO Lark | connected to wss://msg-frontier.feishu.cn/ws/v2
+```
+
+9 张表在 PostgreSQL 里全部建成，`message.attachments` 是 `jsonb`、时间列是
+`timestamp with time zone` —— 说明 `with_variant` 的方言适配在真库上生效，
+不是只有 SQLite 能跑。
+
+访问 `http://127.0.0.1:8080/` → 自动跳注册页；未登录调 API 返回 401。
+
+### 国内构建的两个坑
+
+**坑 1：Docker Hub 拉不动**
+
+```
+failed to resolve reference "docker.io/library/redis:7-alpine":
+dial tcp 154.83.15.20:443: connectex: A connection attempt failed...
+```
+
+配镜像加速器（Docker Desktop → Settings → Docker Engine，或 `~/.docker/daemon.json`）：
+
+```json
+{
+  "registry-mirrors": ["https://docker.m.daocloud.io"]
+}
+```
+
+改完 `docker desktop restart`。实测这个源可用（返回 401 = 可达，需要鉴权，正常）。
+
+**坑 2：pip 装不动**
+
+`pip install -r requirements.txt` 直连 pypi.org 会长时间卡住（实测 40 分钟没出镜像）。
+`backend/Dockerfile` 已把默认源设为清华镜像，可覆盖：
+
+```bash
+docker compose build --build-arg PIP_INDEX=https://pypi.org/simple
+```
+
+### 端口冲突
+
+`docker-compose.yml` 默认 `8080:80`。本机 8080 常被别的服务占用时，
+用 override 文件改端口，不要改主文件：
+
+```yaml
+# docker-compose.local.yml（已进 .gitignore）
+services:
+  web:
+    ports:
+      - "8090:80"
+```
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
