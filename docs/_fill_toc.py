@@ -10,9 +10,10 @@ import pathlib
 import sys
 
 from docx import Document
+from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Cm, Pt
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _docx_common import DOCS, set_run_font, line_spacing  # noqa: E402
@@ -23,6 +24,28 @@ FILES = ["01_需求分析", "02_原型设计", "03_数据库设计",
 LEVEL_STYLE = {"Heading 1": 1, "Heading 2": 2}  # 官方：目录仅到二级标题
 SIZE = {1: 12, 2: 12}  # 官方：目录为小四
 PREFIX = {1: "", 2: "　　"}
+WORK = DOCS / "_tmp_build"  # 页码映射（由 Word 预先导出）放这里
+BODY_START_PAGE = 3  # 封面 1 页 + 目录 1 页，正文从第 3 页起，页码重编为 1
+
+
+def page_map(path, count):
+    """读 Word 预先导出的「物理页码|级别」清单，换算成显示页码。
+
+    映射文件缺失就返回全 None（目录不带页码），不在这里起 Word——
+    批处理里反复启动 Word 会卡死，页码改为离线导出。
+    """
+    src = WORK / f"{path.stem}.txt"
+    if not src.exists():
+        return [None] * count
+    pages = []
+    for line in src.read_text(encoding="utf-16", errors="ignore").splitlines():
+        parts = line.strip().split("|")
+        if len(parts) == 2 and parts[0].isdigit():
+            pages.append(int(parts[0]) - (BODY_START_PAGE - 1))
+    if len(pages) != count:
+        print(f"    {path.stem}: 页码映射 {len(pages)} 条与标题 {count} 条不符，本份不加页码")
+        return [None] * count
+    return pages
 
 
 def find_toc_paragraph(doc):
@@ -47,8 +70,10 @@ def collect_headings(doc, after_p):
     return out
 
 
-def rebuild(p, headings):
+def rebuild(p, headings, pages):
     line_spacing(p, 1.5)
+    p.paragraph_format.tab_stops.add_tab_stop(
+        Cm(15.4), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
     for r in list(p.runs):
         r._r.getparent().remove(r._r)
 
@@ -69,13 +94,17 @@ def rebuild(p, headings):
     first.add_break()
     set_run_font(first, size=6)
 
-    for lvl, txt in headings:
+    for idx, (lvl, txt) in enumerate(headings):
         br = p.add_run()
         br.add_break()
         set_run_font(br, size=SIZE[lvl])
         run = p.add_run(PREFIX[lvl] + txt)
         run.bold = lvl == 1
         set_run_font(run, size=SIZE[lvl], bold=(lvl == 1))
+        if pages[idx] is not None:
+            tab = p.add_run("\t" + str(pages[idx]))
+            tab.bold = False
+            set_run_font(tab, size=SIZE[lvl])
 
     tail = p.add_run()
     e = OxmlElement("w:fldChar")
@@ -96,9 +125,11 @@ def main():
         if not heads:
             print(f"{name}: 未收集到标题，跳过")
             continue
-        rebuild(toc_p, heads)
+        pages = page_map(path, len(heads))
+        rebuild(toc_p, heads, pages)
         doc.save(str(path))
-        print(f"{name}: 目录写入 {len(heads)} 行")
+        got = sum(1 for x in pages if x is not None)
+        print(f"{name}: 目录写入 {len(heads)} 行（带页码 {got} 行）")
 
 
 if __name__ == "__main__":
