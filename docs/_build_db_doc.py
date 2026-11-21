@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _docx_common import (  # noqa: E402
+    chapter_lead,
     DB,
     DOCS,
     FONT_CN,
@@ -80,6 +81,7 @@ def main():
 
     # ---------------------------------------------------------------- 1
     heading(doc, "一、设计概述", 1)
+    chapter_lead(doc, "9 张表，流水与配置分开：流水只追加，配置每个平台一行。")
     body(doc, "本系统把飞书、邮箱、Telegram、钉钉等平台的消息收敛到同一张表里，"
               "再在同一个界面上完成阅读、处理与回复。因此数据库设计的首要目标不是"
               "“把各平台的数据存下来”，而是“让不同来源的消息在结构上不可区分”。")
@@ -105,6 +107,7 @@ def main():
 
     # ---------------------------------------------------------------- 2 逐表
     heading(doc, "二、表结构详述", 1)
+    chapter_lead(doc, "字段按组集中列，同组同表共用首列，扫一眼就能看出分组。")
     body(doc, "本节逐张说明字段含义。类型列写 SQLite 的声明类型；PostgreSQL 侧由模型里的 "
               "with_variant 自动映射，只有四处不同：DATETIME→TIMESTAMPTZ、JSON→JSONB、"
               "FLOAT→DOUBLE PRECISION、自增主键 BIGINT→BIGSERIAL，其余同名。业务代码不区分方言。"
@@ -175,6 +178,7 @@ def main():
 
     # ---------------------------------------------------------------- 3 关系
     heading(doc, "三、关系、约束与索引", 1)
+    chapter_lead(doc, "外键一律 SET NULL：撤销授权不该删掉已经收到的历史消息。")
     body(doc, "九张表可以分成四组：流水组（message、outbox、todo、feedback、event_log）、"
               "配置组（platform_account、user_account）、账号组（app_user）与规则组（auto_rule）。"
               "组之间的耦合刻意做得很轻，任何一组出问题都不会让主链路停摆。"
@@ -211,6 +215,7 @@ def main():
 
     # ---------------------------------------------------------------- 4 数据流
     heading(doc, "四、数据流转", 1)
+    chapter_lead(doc, "入站与出站共用一张 message 表，区别只在 direction。")
     body(doc, "一条消息从平台到达、到用户回复、再到状态回流，会经过以下表的写入：")
     code_block(doc, """
 ① 平台事件 → event_log（原始报文留痕）
@@ -231,6 +236,7 @@ def main():
 
     # ---------------------------------------------------------------- 6 方言
     heading(doc, "五、方言适配", 1)
+    chapter_lead(doc, "同一模型 + 运行时分支，SQLite 与 PostgreSQL 都能跑，不维护两套 SQL。")
     body(doc, "同一套模型要跑在 SQLite（本地）与 PostgreSQL（容器），差异四处，都按方言分支处理。")
     diff_rows = [
         ("主键类型", "BigInteger().with_variant(Integer, 'sqlite')", "SQLite 只有 INTEGER PRIMARY KEY 才自增"),

@@ -71,6 +71,32 @@ def body(doc, text, indent=True, size=10.5, bold=False, align=None, italic=False
 para = body
 
 
+def lead_body(doc, lead, text, size=10.5, indent=True):
+    """首句加粗的正文段：「结论。补充说明……」"""
+    p = doc.add_paragraph()
+    line_spacing(p)
+    if indent:
+        p.paragraph_format.first_line_indent = Pt(21)
+    r1 = p.add_run(lead)
+    set_run_font(r1, size=size, bold=True)
+    r2 = p.add_run(text)
+    set_run_font(r2, size=size)
+    return p
+
+
+def chapter_lead(doc, text):
+    """章首一句结论，让读者不读正文也知道这一章要说什么。"""
+    p = doc.add_paragraph()
+    line_spacing(p, 1.35)
+    p.paragraph_format.space_before = Pt(2)
+    p.paragraph_format.space_after = Pt(8)
+    r1 = p.add_run("本章结论　")
+    set_run_font(r1, size=9.5, bold=True, color=(0x2B, 0x55, 0xC8))
+    r2 = p.add_run(text)
+    set_run_font(r2, size=9.5, color=(0x3C, 0x45, 0x52))
+    return p
+
+
 def heading(doc, text, level=1):
     h = doc.add_heading(level=level)
     line_spacing(h, 1.5)
