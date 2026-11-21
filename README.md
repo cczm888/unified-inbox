@@ -50,6 +50,10 @@ docker compose up -d --build
 不必等数据库起来，直接一条命令验证接入层是否真的通了：
 
 ```bash
+python scripts/check-platform.py    # 四个平台逐个报「通 / 不通 + 原因」
+```
+
+```bash
 cd backend
 python scripts/probe.py feishu --listen 60     # 期间在飞书里给机器人发一句话
 python scripts/probe.py dingtalk --listen 60
@@ -175,7 +179,7 @@ npm install && npm run dev        # http://localhost:5173，已配好 /api 代�
 ## 8. 已验证状态（可复现）
 
 ```bash
-cd backend && python -m pytest -q      # 26 passed
+cd backend && python -m pytest -q      # 31 passed
 cd web && npm run build                # vite build 成功，dist/ 产出
 ```
 
