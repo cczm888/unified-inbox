@@ -171,7 +171,7 @@ cd web && npm run build                # vite build 成功，dist/ 产出
 
 - 26 条单测：`test_convert.py` 8（三平台转换 + 自回环丢弃）、`test_mail.py` 9（邮件解析/HTML 转文本/附件 part 编号/**四平台字段集合一致性**）、`test_services.py` 9（outbox payload、时间戳、优先级规则、LLM 与限流降级）；
 - 前端 `vite build` 3162 modules 转换成功；
-- `app.openapi()` 实测 **38 条路由** + `/healthz`。
+- `app.openapi()` 实测 **46 条路径 / 50 个接口** + `/healthz`。
 
 ### 8.1 飞书真机联调记录（2026-11-02 实测通过）
 
