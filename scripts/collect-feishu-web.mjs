@@ -15,7 +15,11 @@
  *   UTI_PAGE      ego 页标签，默认 p2（飞书网页版所在页）
  */
 const API = process.env.UTI_API || "http://127.0.0.1:8000";
-const PASSWORD = process.env.UTI_PASSWORD || "94o32jglny1a";
+const PASSWORD = process.env.UTI_PASSWORD || "";
+if (!PASSWORD) {
+  console.error("缺少 UTI_PASSWORD 环境变量（就是后端的 ACCESS_PASSWORD）。仓库里不放口令。");
+  process.exit(1);
+}
 const PAGE = process.env.UTI_PAGE || "p2";
 const PLATFORM = "feishu_web";
 

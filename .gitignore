@@ -51,3 +51,6 @@ ai-session-export/*.md
 !ai-session-export/README.md
 
 docker-compose.local.yml
+
+# RPA 截图与运行产物
+.rpa-shots/

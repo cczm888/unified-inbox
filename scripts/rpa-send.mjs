@@ -21,9 +21,14 @@
  * 用法：ego-browser nodejs -e "await import('file:///.../rpa-send.mjs')"
  */
 
-const API = "http://127.0.0.1:8000";
-const PASSWORD = "94o32jglny1a";
-const DIR = "C:/Users/75090/Desktop/DEEP SEEK/_ego/feishu-setup-20261102-1750/";
+const API = process.env.UTI_API || "http://127.0.0.1:8000";
+const PASSWORD = process.env.UTI_PASSWORD || "";
+// 截图落盘目录：个人机器路径，用 UTI_SHOT_DIR 覆盖
+const DIR = process.env.UTI_SHOT_DIR || "./.rpa-shots/";
+if (!PASSWORD) {
+  console.error("缺少 UTI_PASSWORD 环境变量（就是后端的 ACCESS_PASSWORD）。仓库里不放口令。");
+  process.exit(1);
+}
 
 /** 用 fetch 拿会话 cookie（ego 的 Node 环境有全局 fetch） */
 async function login() {

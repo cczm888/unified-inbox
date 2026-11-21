@@ -127,6 +127,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/ingest \
 
 已实现的采集器：`scripts/collect-feishu-web.mjs` —— 用 ego-browser 打开飞书网页版，按几何特征定位左栏会话项，逐个打开读 `.page-view-messenger-chat` 的文本，再 POST 上来。**已知限制**：会话内消息是整段文本（larklet 卡片组件内部结构读不到逐条粒度）、依赖前端 DOM 结构、需要浏览器登录态。
 
+**这两个脚本从环境变量读口令，仓库里不留凭证**：`UTI_PASSWORD`（= 后端 `ACCESS_PASSWORD`）、`UTI_API`（后端地址）、`UTI_SHOT_DIR`（RPA 截图目录，默认 `./.rpa-shots/`）。缺 `UTI_PASSWORD` 时脚本直接报错退出，不会静默用默认值。
+
 ## 6. 本地开发（不用 Docker）
 
 ### 6.1 一键启动（Windows，推荐演示时用）
