@@ -226,10 +226,11 @@ def cover_and_toc(doc, title, subtitle):
             line_spacing(p, 1.5)
             set_run_font(p.add_run(val), size=11, bold=(i == 0))
 
-    doc.add_page_break()
-
+    # 目录另起一页：用段前分页而不是 add_page_break()，
+    # 后者会在新页顶部多留一个空段落，整份文档白多一页。
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.page_break_before = True
     p.paragraph_format.space_after = Pt(14)
     set_run_font(p.add_run("目　录"), size=16, bold=True)
 

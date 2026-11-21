@@ -8,12 +8,16 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _docx_common import (  # noqa: E402
     DB,
     DOCS,
+    FONT_CN,
+    FONT_EN,
     body,
     caption,
     code_block,
     cover_and_toc,
     heading,
+    line_spacing,
     new_doc,
+    set_run_font,
     start_body_section,
     table,
 )
@@ -95,15 +99,17 @@ def main():
         cn, desc = META[name]
         rows.append((name, cn, f"{schema[name]['rows']:,}", desc))
     table(doc, ["表名", "中文名", "当前行数", "职责"], rows, widths=[3.2, 2.2, 1.6, 8.0])
-    caption(doc, "表 1-1 数据表清单。当前行数取自本地开发库（SQLite），"
-                 "用于说明各表在演示阶段的实际使用情况。可以看到 message 与 outbox "
-                 "是数据量最大的两张表，符合“消息系统以流水为主”的特征；platform_account "
-                 "与 user_account 行数较少，因为它们是配置类数据，每个平台只需一行。")
+    caption(doc, "表 1-1 数据表清单，行数取自本地开发库（SQLite）。message 与 outbox 最大，"
+                 "符合“消息系统以流水为主”的特征；platform_account 与 user_account 很小，"
+                 "因为它们是配置类数据，每个平台只需一行。")
 
     # ---------------------------------------------------------------- 2 逐表
     heading(doc, "二、表结构详述", 1)
-    body(doc, "本节逐张说明字段含义。类型列写 SQLite 的声明类型，括号内是 PostgreSQL 对应类型——"
-              "两者由模型里的 with_variant 自动映射，业务代码不需要区分。")
+    body(doc, "本节逐张说明字段含义。类型列写 SQLite 的声明类型；PostgreSQL 侧由模型里的 "
+              "with_variant 自动映射，只有四处不同：DATETIME→TIMESTAMPTZ、JSON→JSONB、"
+              "FLOAT→DOUBLE PRECISION、自增主键 BIGINT→BIGSERIAL，其余同名。业务代码不区分方言。"
+              "为压住篇幅，同组的几张表合并在同一张明细表里：首列是表名，"
+              "同一张表的字段共用一个合并单元格，扫一眼就能看出分组。")
 
     pg_types = {
         "BIGINT": "BIGINT", "INTEGER": "INTEGER", "VARCHAR": "VARCHAR",
@@ -111,78 +117,100 @@ def main():
         "BOOLEAN": "BOOLEAN", "FLOAT": "DOUBLE PRECISION",
     }
 
-    for i, name in enumerate(ORDER, start=1):
-        cn, desc = META[name]
-        info = schema[name]
-        heading(doc, f"2.{i} {name}（{cn}）", 2)
+    groups = [
+        ("2.1 流水组：message / outbox / todo / feedback / event_log",
+         "流水组记录“发生过什么”，只追加、少更新：五张表都有 created_at，索引都建在时间与状态上。",
+         ["message", "outbox", "todo", "feedback", "event_log"]),
+        ("2.2 配置与账号组：platform_account / user_account / app_user / auto_rule",
+         "这一组记录“按什么规则运行”，行数少、改动少：凭证加密存、账号单用户、规则按优先级排序。",
+         ["platform_account", "user_account", "app_user", "auto_rule"]),
+    ]
 
-        rows = []
-        for c in info["cols"]:
-            base = c["type"].split("(")[0].upper()
-            pg = pg_types.get(base, base)
-            typ = f"{c['type']}（PG: {pg}）" if pg != base else c["type"]
-            flag = []
-            if c["pk"]:
-                flag.append("主键")
-            if c["notnull"]:
-                flag.append("非空")
-            rows.append((
-                c["name"],
-                typ,
-                "、".join(flag) or "可空",
-                c["default"] if c["default"] is not None else "—",
-            ))
-        table(doc, ["字段", "类型", "约束", "默认值"], rows, widths=[4.2, 5.4, 2.6, 3.0], font_size=8)
-        caption(doc, f"表 2-{i} {name}：{desc}"
-                     f"共 {len(info['cols'])} 个字段，当前 {info['rows']:,} 行。"
-                     + ("外键：" + "、".join(f"{a} → {b}" for a, b in info["fks"]) + "。" if info["fks"] else "")
-                     + ("索引：" + "、".join(n for n, _u in info["idx"]) + "。" if info["idx"] else ""))
+    for gi, (title, intro, names) in enumerate(groups, start=1):
+        heading(doc, title, 2)
+        body(doc, intro)
+
+        rows, spans = [], []
+        for name in names:
+            cn, _desc = META[name]
+            info = schema[name]
+            start = len(rows)
+            for c in info["cols"]:
+                base = c["type"].split("(")[0].upper()
+                pg = pg_types.get(base, base)
+                typ = c["type"]
+                flag = []
+                if c["pk"]:
+                    flag.append("主键")
+                if c["notnull"]:
+                    flag.append("非空")
+                rows.append((
+                    "",
+                    c["name"],
+                    typ,
+                    "、".join(flag) or "可空",
+                    c["default"] if c["default"] is not None else "—",
+                ))
+            spans.append((start, len(rows) - 1, f"{name}\n{cn}\n{len(info['cols'])} 字段"))
+
+        t = table(doc, ["表", "字段", "类型", "约束", "默认值"], rows,
+                  widths=[2.9, 3.6, 4.0, 2.0, 2.4], font_size=7.5)
+
+        # 首列按表合并，避免每行重复表名
+        for start, end, label in spans:
+            merged = t.cell(start + 1, 0).merge(t.cell(end + 1, 0))
+            for p in list(merged.paragraphs):
+                p._element.getparent().remove(p._element)
+            p = merged.add_paragraph()
+            line_spacing(p, 1.15)
+            for k, seg in enumerate(label.split("\n")):
+                if k:
+                    p.add_run().add_break()
+                set_run_font(p.add_run(seg), size=7.5,
+                             bold=(k == 0), en=FONT_EN if k == 0 else FONT_CN)
+
+        caption(doc, f"表 2-{gi} " + "、".join(f"{n}（{META[n][0]}）" for n in names) +
+                     " 的完整字段。当前行数见第一章表 1-1；"
+                     "外键、唯一约束与索引见第三章，这里只列字段本身。")
 
     # ---------------------------------------------------------------- 3 关系
-    heading(doc, "三、表间关系与约束", 1)
+    heading(doc, "三、关系、约束与索引", 1)
     body(doc, "九张表可以分成四组：流水组（message、outbox、todo、feedback、event_log）、"
               "配置组（platform_account、user_account）、账号组（app_user）与规则组（auto_rule）。"
-              "组之间的耦合刻意做得很轻，任何一组出问题都不会让主链路停摆。")
+              "组之间的耦合刻意做得很轻，任何一组出问题都不会让主链路停摆。"
+              "外键、唯一约束与索引都是围绕“消息要幂等、worker 要抢得快、列表要翻得动”这三件事加的，"
+              "所以合在一张表里对照着看更清楚。")
 
-    rel_rows = [
-        ("outbox.parent_message_id", "message.id", "SET NULL", "出站消息对应的入站消息；原始消息被删时置空而不是级联删除"),
-        ("todo.source_message_id", "message.id", "SET NULL", "待办来自哪条消息"),
-        ("feedback.message_id", "message.id", "SET NULL", "修正记录挂在哪条消息上"),
-        ("message.account_id", "user_account.id", "SET NULL", "该消息属于哪个用户身份（应用身份为 NULL）"),
+    cons_rows = [
+        ("外键", "outbox.parent_message_id → message.id", "SET NULL",
+         "出站消息对应的入站消息；原始消息被删时置空而不是级联删除"),
+        ("外键", "todo.source_message_id → message.id", "SET NULL", "待办来自哪条消息"),
+        ("外键", "feedback.message_id → message.id", "SET NULL", "修正记录挂在哪条消息上"),
+        ("外键", "message.account_id → user_account.id", "SET NULL",
+         "该消息属于哪个用户身份（应用身份为 NULL）"),
+        ("唯一", "uq_message_platform_msgid", "message(platform, platform_msg_id)",
+         "同一平台同一条消息只入库一次；重连、回填、采集器重复推送都靠它去重"),
+        ("唯一", "uq_account_platform_app", "platform_account(platform, app_id)",
+         "一个平台的一个应用只保留一份配置"),
+        ("唯一", "uq_user_account_platform_user", "user_account(platform, user_id)",
+         "一个平台的一个用户身份只保留一份授权"),
+        ("索引", "ix_message_platform_status", "message(platform, status)",
+         "左侧会话列表按平台筛 + 统计待处理数"),
+        ("索引", "ix_message_created_at", "message(created_at)", "消息流按时间倒序分页"),
+        ("索引", "ix_outbox_next_retry", "outbox(next_retry_at)",
+         "worker 取下一批待投递任务（配合 SKIP LOCKED）"),
+        ("索引", "ix_event_log_received", "event_log(received_at)", "排查时按时间翻原始事件"),
+        ("索引", "ix_message_account", "message(account_id)", "按用户身份查消息（用户身份通道预留）"),
     ]
-    table(doc, ["外键字段", "指向", "删除策略", "说明"], rel_rows, widths=[4.6, 3.4, 2.2, 6.8])
-    caption(doc, "表 3-1 外键与删除策略。所有外键统一使用 SET NULL 而不是 CASCADE，"
-                 "原因是消息是审计凭证：撤销一个平台授权不应该连带删掉已经收到的历史消息。"
-                 "早期版本这里用的是 CASCADE，第三方代码审查指出后已改正。")
+    table(doc, ["类别", "名称", "涉及字段", "作用 / 删除策略"], cons_rows,
+          widths=[1.6, 5.2, 4.6, 5.6], font_size=7.5)
+    caption(doc, "表 3-1 外键、唯一约束与索引。外键统一用 SET NULL 而不是 CASCADE——"
+                 "消息是审计凭证，撤销授权不该连带删掉已经收到的历史消息。"
+                 "uq_message_platform_msgid 是幂等性的唯一保证：实时事件、历史回填、外部采集器"
+                 "三条写入路径都用 ON CONFLICT DO NOTHING 指定它，重复到达只被静默忽略。")
 
-    body(doc, "唯一约束承担了另一部分一致性职责：")
-    uniq_rows = [
-        ("uq_message_platform_msgid", "message(platform, platform_msg_id)", "同一平台同一条消息只入库一次，重连、回填、采集器重复推送都靠它去重"),
-        ("uq_account_platform_app", "platform_account(platform, app_id)", "一个平台的一个应用只保留一份配置"),
-        ("uq_user_account_platform_user", "user_account(platform, user_id)", "一个平台的一个用户身份只保留一份授权"),
-    ]
-    table(doc, ["约束名", "字段", "作用"], uniq_rows, widths=[5.0, 5.2, 6.8])
-    caption(doc, "表 3-2 唯一约束。uq_message_platform_msgid 是幂等性的唯一保证："
-                 "所有写入路径（实时事件、历史回填、外部采集器）都用 INSERT ... ON CONFLICT DO NOTHING "
-                 "并指定这个索引，因此同一条平台消息重复到达时只会被静默忽略，不会产生重复行。")
-
-    # ---------------------------------------------------------------- 4 索引
-    heading(doc, "四、索引与查询路径", 1)
-    body(doc, "索引不是按“可能用到”加的，而是按界面上真实存在的查询加的。")
-    idx_rows = [
-        ("ix_message_platform_status", "message(platform, status)", "左侧会话列表按平台筛 + 统计待处理数"),
-        ("ix_message_created_at", "message(created_at)", "消息流按时间倒序分页"),
-        ("ix_outbox_next_retry", "outbox(next_retry_at)", "worker 取下一批待投递任务（配合 SKIP LOCKED）"),
-        ("ix_event_log_received", "event_log(received_at)", "排查时按时间翻原始事件"),
-        ("ix_message_account", "message(account_id)", "按用户身份查消息（用户身份通道预留）"),
-    ]
-    table(doc, ["索引名", "覆盖字段", "服务的查询"], idx_rows, widths=[5.4, 5.0, 6.6])
-    caption(doc, "表 4-1 索引清单。其中 ix_outbox_next_retry 最关键：出站 worker 用"
-                 "“UPDATE ... WHERE id IN (SELECT ... ORDER BY id LIMIT n FOR UPDATE SKIP LOCKED)”"
-                 "批量领取任务，没有这个索引会在任务堆积时全表扫描。")
-
-    # ---------------------------------------------------------------- 5 数据流
-    heading(doc, "五、数据流转", 1)
+    # ---------------------------------------------------------------- 4 数据流
+    heading(doc, "四、数据流转", 1)
     body(doc, "一条消息从平台到达、到用户回复、再到状态回流，会经过以下表的写入：")
     code_block(doc, """
 ① 平台事件 → event_log（原始报文留痕）
@@ -197,26 +225,21 @@ def main():
               ↓  用户在网页上手动回复
 ⑤ 同一路径，另外写 feedback（如果人改了紧急度/状态）
 """)
-    caption(doc, "图 5-1 消息处理链路。这张图说明了为什么入站与出站要共用一张 message 表："
-                 "第②步和第④步写入的是同一张表的不同方向行，界面上按 created_at 排序即可还原"
-                 "完整对话。event_log 与 feedback 是两条旁路：前者为排查保留原始报文，"
-                 "后者为人机协同保留修正痕迹。")
+    caption(doc, "图 4-1 消息处理链路，也说明了为什么入站与出站共用一张 message 表："
+                 "②与④写的是同一张表的两个方向，按 created_at 排序即可还原完整对话。"
+                 "event_log 与 feedback 是两条旁路——前者留原始报文备排查，后者留人工修正痕迹。")
 
     # ---------------------------------------------------------------- 6 方言
-    heading(doc, "六、方言适配", 1)
-    body(doc, "同一套模型要同时跑在 SQLite（本地开发）与 PostgreSQL（容器部署），"
-              "差异集中在四处，都用“按方言分支”处理，没有引入 ORM 之外的抽象层。")
+    heading(doc, "五、方言适配", 1)
+    body(doc, "同一套模型要跑在 SQLite（本地）与 PostgreSQL（容器），差异四处，都按方言分支处理。")
     diff_rows = [
         ("主键类型", "BigInteger().with_variant(Integer, 'sqlite')", "SQLite 只有 INTEGER PRIMARY KEY 才自增"),
         ("JSON 列", "JSON().with_variant(JSONB(), 'postgresql')", "SQLite 无 JSONB，用 TEXT 存 JSON"),
-        ("插入去重", "sqlite_insert / pg_insert", "两者的 on_conflict 语法不同"),
-        ("时间差", "julianday() / extract(epoch from)", "平均处理时长的算法不同"),
+        ("插入去重、时间差", "sqlite_insert / pg_insert；julianday() / extract(epoch from)", "on_conflict 语法与平均时长算法不同"),
     ]
-    table(doc, ["差异点", "处理方式", "原因"], diff_rows, widths=[3.4, 6.6, 7.0])
-    caption(doc, "表 6-1 SQLite 与 PostgreSQL 的适配点。采用“同一模型 + 运行时分支”"
-                 "而不是两套 SQL 文件，是为了避免迁移脚本漂移——本地能跑、容器里跑不起来，"
-                 "是这类项目最常见的翻车点。补齐字段则用幂等的 ALTER TABLE，"
-                 "见 db.py 的 _ensure_columns()。")
+    table(doc, ["差异点", "处理方式", "原因"], diff_rows, widths=[3.2, 7.2, 6.6], font_size=8)
+    caption(doc, "表 5-1 SQLite 与 PostgreSQL 的适配点。走“同一模型 + 运行时分支”而不是两套 SQL，"
+                 "是为了避免本地能跑、容器里跑不起来的迁移漂移。")
 
     out = DOCS / "03_数据库设计.docx"
     doc.save(out)
