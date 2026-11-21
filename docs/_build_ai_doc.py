@@ -45,7 +45,7 @@ def build():
         ("本地运行", "scripts/start-ui.ps1（双击即用，自动拉起前后端并打开浏览器）"),
         ("容器部署", "docker compose up -d --build（四容器：api / db / redis / web）"),
         ("技术栈", "后端 FastAPI + SQLAlchemy(async) + PostgreSQL/SQLite；前端 Vue 3 + Vite"),
-        ("代码规模", "Python 34 文件约 4,800 行；前端 8 文件约 2,600 行；46 条路由；26 项自动化测试"),
+        ("代码规模", "Python 38 个文件约 5,500 行；前端 6 个文件约 2,600 行；46 条路径、50 个接口；26 项自动化测试"),
     ]
     table(doc, ["项目", "说明"], repo_rows, widths=[3.0, 12.0], font_size=9)
     caption(doc, "表 1-1 代码仓库与运行方式。本地运行不依赖 Docker（SQLite 直跑），"

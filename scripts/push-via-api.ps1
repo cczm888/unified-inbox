@@ -1,4 +1,4 @@
-﻿# 用 GitHub REST API 提交本地这笔 commit（github.com:443 的 git 协议被掐时用）
+# 用 GitHub REST API 提交本地这笔 commit（github.com:443 的 git 协议被掐时用）
 #
 # 背景：本机访问 github.com 的 HTTPS 会超时（20 秒 000），但 api.github.com 正常。
 # git push 走的是 github.com，所以永远失败；API 走的是 api.github.com，能通。
@@ -8,14 +8,21 @@
 
 param(
     [string]$Repo = "cczm888/unified-inbox",
-    [string]$Branch = "main"
+    [string]$Branch = "main",
+    # 指定要推的文件（相对仓库根）。不填则用 origin/<branch>..HEAD 的差异。
+    [string[]]$Files = @(),
+    [string]$Message = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$files = @(git diff --name-only "origin/$Branch..HEAD")
+if ($Files.Count -gt 0) {
+    $files = $Files
+} else {
+    $files = @(git diff --name-only "origin/$Branch..HEAD")
+}
 if (-not $files -or $files.Count -eq 0) {
     Write-Host "没有待推送的改动（origin/$Branch 已是最新）" -ForegroundColor Green
     exit 0
@@ -57,7 +64,7 @@ $newTree = (gh api "repos/$Repo/git/trees" --method POST --input $tf --jq ".sha"
 Write-Host "新 tree: $newTree"
 
 # 3) 建 commit（作者信息与本地一致，message 原样搬）
-$msg = ((git log -1 --format="%B") -join "`n").TrimEnd()
+$msg = if ($Message) { $Message } else { ((git log -1 --format="%B") -join "`n").TrimEnd() }
 $authorName = ((git log -1 --format="%an") | Select-Object -First 1).Trim()
 $authorEmail = ((git log -1 --format="%ae") | Select-Object -First 1).Trim()
 $commitPayload = @{
