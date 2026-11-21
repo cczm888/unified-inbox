@@ -101,7 +101,13 @@ def build_from_settings(platform: str, on_inbound: InboundCallback) -> BaseAdapt
     if platform == "telegram":
         if not settings.telegram_ready:
             return None
-        return TelegramAdapter(settings.telegram_bot_token, on_inbound)
+        return TelegramAdapter(
+            settings.telegram_bot_token,
+            on_inbound,
+            api_base=settings.telegram_api_base,
+            proxy=settings.telegram_proxy,
+            relay_key=settings.telegram_relay_key,
+        )
 
     if platform == "email":
         if not settings.email_ready:

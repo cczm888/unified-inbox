@@ -26,12 +26,27 @@ class TelegramAdapter(BaseAdapter):
     display_name = "Telegram"
     rpm = 30
 
-    def __init__(self, token: str, on_inbound: InboundCallback) -> None:
+    def __init__(
+        self,
+        token: str,
+        on_inbound: InboundCallback,
+        api_base: str = "",
+        proxy: str = "",
+        relay_key: str = "",
+    ) -> None:
         super().__init__(on_inbound)
         self.token = token
-        self.base = f"https://api.telegram.org/bot{token}"
-        self.file_base = f"https://api.telegram.org/file/bot{token}"
-        self._http = httpx.AsyncClient(timeout=40.0)
+        # 允许改 base / 走代理：本机被墙时（TCP 通、TLS 被 RST）靠这两个逃生口
+        base = (api_base or "https://api.telegram.org").rstrip("/")
+        self.base = f"{base}/bot{token}"
+        self.file_base = f"{base}/file/bot{token}"
+        # 用自建反代时要带共享密钥，否则反代对外就是开放代理
+        headers = {"x-relay-key": relay_key} if relay_key else None
+        self._http = httpx.AsyncClient(
+            timeout=40.0,
+            proxy=(proxy or None),
+            headers=headers,
+        )
         self._task: asyncio.Task | None = None
         self._stopping = False
         self._offset: int | None = None
@@ -169,9 +184,7 @@ class TelegramAdapter(BaseAdapter):
                 log.warning("telegram getFile 失败: %s", data.get("description"))
                 return None
             file_path = data["result"]["file_path"]
-            blob = await self._http.get(
-                f"https://api.telegram.org/file/bot{self.token}/{file_path}",
-            )
+            blob = await self._http.get(f"{self.file_base}/{file_path}")
             if blob.status_code != 200:
                 log.warning("telegram 下载附件失败 status=%s", blob.status_code)
                 return None

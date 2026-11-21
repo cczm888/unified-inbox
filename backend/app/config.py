@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # ---- Telegram（兜底 + 冲"三平台"加分，零审核）----
     telegram_bot_token: str = ""
     telegram_enabled: bool = True
+    # 本机直连 api.telegram.org 会被 RST（TCP 通、TLS 握手被重置），
+    # 所以留两个逃生口：走本地代理，或指向自己搭的反向代理。
+    telegram_api_base: str = ""     # 例：https://tg-relay.xxx.workers.dev ；留空用官方
+    telegram_proxy: str = ""        # 例：http://127.0.0.1:7890 或 socks5://127.0.0.1:1080
+    telegram_relay_key: str = ""    # 自建反代的共享密钥（deploy/telegram-relay.js 用）
 
     # ---- 邮箱（IMAP 收 + SMTP 发，标准协议，不需要审核）----
     # QQ/163 请填"授权码"而不是登录密码；Gmail/Outlook 需应用专用密码。

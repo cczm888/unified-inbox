@@ -65,13 +65,25 @@ def check_telegram(env: dict[str, str]) -> tuple[bool, str]:
     token = env.get("TELEGRAM_BOT_TOKEN", "")
     if not token:
         return False, "未填 TELEGRAM_BOT_TOKEN"
-    code, body = http_json(f"https://api.telegram.org/bot{token}/getMe")
-    if code == 0:
-        return False, f"网络不可达（{body.get('error', '')}）——境内直连需要代理"
+    base = (env.get("TELEGRAM_API_BASE") or "https://api.telegram.org").rstrip("/")
+    relay = env.get("TELEGRAM_RELAY_KEY", "")
+    url = f"{base}/bot{token}/getMe"
+    headers = {"x-relay-key": relay} if relay else {}
+    req = urllib.request.Request(url, headers=headers)
+    route = "直连" if base == "https://api.telegram.org" else f"经反代 {base}"
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            body = json.loads(r.read().decode() or "{}")
+    except Exception as exc:  # noqa: BLE001
+        msg = f"{type(exc).__name__}: {exc}"
+        # TCP 能连上、TLS 被重置是境内直连的典型症状，直接把结论说清楚
+        if "reset" in msg.lower() or "handshake" in msg.lower() or "EOF" in msg:
+            return False, f"{route} 时 TLS 握手被重置，需要代理或反代（{msg}）"
+        return False, f"{route} 不可达（{msg}）"
     if not body.get("ok"):
-        return False, f"凭证被拒：{body.get('description', code)}"
+        return False, f"{route} 凭证被拒：{body.get('description', '')}"
     me = body.get("result", {})
-    return True, f"@{me.get('username')}（id={me.get('id')}）"
+    return True, f"@{me.get('username')}（id={me.get('id')}，{route}）"
 
 
 def check_dingtalk(env: dict[str, str]) -> tuple[bool, str]:

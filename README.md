@@ -64,6 +64,26 @@ python scripts/probe.py all                    # 三平台一起
 它做四件事：换 token → 读机器人信息 → 列可见会话 → 开长连接等真实消息。
 **跑出来的日志会自动存到 `docs/证据/`，直接就是初赛要交的「API 连通性证据」。**
 
+### Telegram 连不上时（境内常见）
+
+直连 `api.telegram.org` 时，TCP 三次握手能成、**TLS 握手阶段被 RST**
+（`schannel: failed to receive handshake` / `Recv failure: Connection was reset`）。
+换 IP、换 SNI、走 IPv6 都一样，是被按 IP 拦的，本地没有绕法。两条出路：
+
+```dotenv
+# 出路 1：有代理
+TELEGRAM_PROXY=socks5://127.0.0.1:1080      # 也支持 http://
+
+# 出路 2：没代理就在 Cloudflare Workers 上搭个私有反代（免费）
+#   deploy/telegram-relay.js 是现成的 Worker；一条命令部署：
+#   $env:CF_API_TOKEN="..."; $env:CF_ACCOUNT_ID="..."; .\scripts\deploy-telegram-relay.ps1
+TELEGRAM_API_BASE=https://tg-relay.<你的子域>.workers.dev
+TELEGRAM_RELAY_KEY=<部署脚本打印的密钥>
+```
+
+反代侧校验共享密钥、只放行 `/bot*` 与 `/file/bot*` 两类路径，不会变成开放代理。
+配置对不对有测试守着（`backend/tests/test_telegram_egress.py`，4 项）。
+
 ## 3. 闭环在哪（评审对照表）
 
 | 环节 | 实现位置 | 可演示动作 |
@@ -179,7 +199,7 @@ npm install && npm run dev        # http://localhost:5173，已配好 /api 代�
 ## 8. 已验证状态（可复现）
 
 ```bash
-cd backend && python -m pytest -q      # 31 passed
+cd backend && python -m pytest -q      # 36 passed
 cd web && npm run build                # vite build 成功，dist/ 产出
 ```
 

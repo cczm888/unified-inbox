@@ -1,4 +1,4 @@
-# 用 GitHub REST API 提交本地这笔 commit（github.com:443 的 git 协议被掐时用）
+﻿# 用 GitHub REST API 提交本地这笔 commit（github.com:443 的 git 协议被掐时用）
 #
 # 背景：本机访问 github.com 的 HTTPS 会超时（20 秒 000），但 api.github.com 正常。
 # git push 走的是 github.com，所以永远失败；API 走的是 api.github.com，能通。

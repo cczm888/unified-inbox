@@ -68,7 +68,13 @@ def build_adapter(platform: str, app_id: str, secret: str, extra: dict | None, c
     if platform == "telegram":
         from ..adapters.telegram import TelegramAdapter
 
-        return TelegramAdapter(secret, cb)
+        return TelegramAdapter(
+            secret,
+            cb,
+            api_base=settings.telegram_api_base,
+            proxy=settings.telegram_proxy,
+            relay_key=settings.telegram_relay_key,
+        )
     if platform == "feishu":
         from ..adapters.feishu import FeishuAdapter
 
