@@ -24,8 +24,13 @@ from docx.shared import Cm, Pt, RGBColor
 DOCS = pathlib.Path(__file__).parent
 DB = pathlib.Path(__file__).parent.parent / "backend" / "local.db"
 
-FONT_CN = "微软雅黑"
+FONT_CN = "宋体"
 FONT_EN = "Consolas"
+
+# 官方要求封面固定四行，且「不要有其他内容」
+PROJECT_NAME = "统一消息收件箱"
+TEAM_MEMBERS = "队伍人员：陈志明　李家杰"
+ENTRY_NO = "报名序号：19 组"
 
 
 # ---------------------------------------------------------------- 基础排版
@@ -102,16 +107,19 @@ def heading(doc, text, level=1):
     line_spacing(h, 1.5)
     h.paragraph_format.space_before = Pt(12 if level == 1 else 8)
     h.paragraph_format.space_after = Pt(6)
-    sizes = {1: 16, 2: 13, 3: 11.5}
+    # 官方：一级标题宋体小四加粗、二级宋体五号加粗、三级及正文宋体五号
+    sizes = {1: 12, 2: 10.5, 3: 10.5}
     run = h.add_run(text)
     set_run_font(run, size=sizes.get(level, 11), bold=True, color=(0x1A, 0x1D, 0x21))
     return h
 
 
 def caption(doc, text, note=None):
-    """图表的编号 + 说明（官方要求每个图表附 100-200 字说明）。
+    """图表题注。
 
-    支持两种叫法：caption(doc, "表 1　内容") 或 caption(doc, "表 1", "内容")。
+    官方排版要求：表序号与表名在**表正上方居中**，图序号与图名在**图下方居中**。
+    调用方一律是「table() 之后紧跟 caption()」或「image() 之后紧跟 caption()」，
+    所以这里按前一个块级元素自动判断：前面是表格就把题注移到表格之前。
     """
     if note:
         # 用半角空格而不是全角空格：编号里带 ASCII 数字（如「表 2-1」），
@@ -119,9 +127,26 @@ def caption(doc, text, note=None):
         text = f"{text}  {note}"
     p = doc.add_paragraph()
     line_spacing(p, 1.15)
-    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    p.paragraph_format.space_after = Pt(10)
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(6)
+    p.paragraph_format.space_before = Pt(6)
     set_run_font(p.add_run(text), size=9, color=(0x5A, 0x64, 0x74))
+
+    # 题注默认落在表格后面；官方要求表题在表上方，这里把它前移
+    body = doc.element.body
+    prev = p._p.getprevious()
+    tbl = None
+    if prev is not None and prev.tag == qn("w:tbl"):
+        tbl = prev
+    elif prev is not None and prev.tag == qn("w:p"):
+        # 空段落夹在表格与题注之间的情况
+        pp = prev.getprevious()
+        if pp is not None and pp.tag == qn("w:tbl"):
+            tbl = pp
+    if tbl is not None:
+        tbl.addprevious(p._p)
+        p.paragraph_format.space_before = Pt(10)
+        p.paragraph_format.space_after = Pt(3)
     return p
 
 
@@ -165,18 +190,18 @@ def table(doc, headers, rows, widths=None, header_fill="EEF3FF", font_size=9):
     return t
 
 
-def code_block(doc, text):
+def code_block(doc, text, size=8, space_after=10):
     p = doc.add_paragraph()
     line_spacing(p, 1.0)
     p.paragraph_format.left_indent = Pt(12)
-    p.paragraph_format.space_after = Pt(10)
+    p.paragraph_format.space_after = Pt(space_after)
     shd = OxmlElement("w:shd")
     shd.set(qn("w:fill"), "F6F7F9")
     p._p.get_or_add_pPr().append(shd)
     for i, line in enumerate(text.strip("\n").split("\n")):
         if i:
             p.add_run().add_break()
-        set_run_font(p.add_run(line), size=8.5, en=FONT_EN, cn=FONT_CN)
+        set_run_font(p.add_run(line), size=size, en=FONT_EN, cn=FONT_CN)
     return p
 
 
@@ -203,7 +228,7 @@ def add_toc_field(paragraph):
     fld_begin.set(qn("w:fldCharType"), "begin")
     instr = OxmlElement("w:instrText")
     instr.set(qn("xml:space"), "preserve")
-    instr.text = ' TOC \\o "1-3" \\h \\z \\u '
+    instr.text = ' TOC \\o "1-2" \\h \\z \\u '
     sep = OxmlElement("w:fldChar")
     sep.set(qn("w:fldCharType"), "separate")
     placeholder = OxmlElement("w:t")
@@ -220,37 +245,29 @@ def add_toc_field(paragraph):
 
 def cover_and_toc(doc, title, subtitle):
     """第 1 节：封面 + 目录（不编页码）。"""
+    # 封面：官方要求「项目名称（宋体加粗三号居中）、文档名称（宋体加粗四号居中）、
+    # 队伍人员（宋体四号居中）、报名序号（宋体四号居中），不要有其他内容」。
+    for _ in range(7):
+        doc.add_paragraph()
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(18)
+    set_run_font(p.add_run(PROJECT_NAME), size=16, bold=True)
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(30)
+    set_run_font(p.add_run(title), size=14, bold=True)
+
     for _ in range(6):
         doc.add_paragraph()
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    set_run_font(p.add_run(title), size=26, bold=True)
 
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_before = Pt(10)
-    set_run_font(p.add_run(subtitle), size=12, color=(0x5A, 0x64, 0x74))
-
-    for _ in range(8):
-        doc.add_paragraph()
-
-    info = [
-        ("参赛队伍", "19 组"),
-        ("参赛赛道", "赛题 A：跨平台消息互通"),
-        ("队伍成员", "陈志明　李家杰"),
-        ("指导教师", "无"),
-        ("提交日期", "2026 年 11 月 22 日"),
-    ]
-    t = doc.add_table(rows=0, cols=2)
-    t.alignment = WD_TABLE_ALIGNMENT.CENTER
-    for k, v in info:
-        cells = t.add_row().cells
-        for i, val in enumerate((k, v)):
-            cells[i].text = ""
-            p = cells[i].paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER if i == 0 else WD_ALIGN_PARAGRAPH.LEFT
-            line_spacing(p, 1.5)
-            set_run_font(p.add_run(val), size=11, bold=(i == 0))
+    for txt in (TEAM_MEMBERS, ENTRY_NO):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(10)
+        set_run_font(p.add_run(txt), size=14)
 
     # 目录另起一页：用段前分页而不是 add_page_break()，
     # 后者会在新页顶部多留一个空段落，整份文档白多一页。
@@ -258,7 +275,7 @@ def cover_and_toc(doc, title, subtitle):
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.page_break_before = True
     p.paragraph_format.space_after = Pt(14)
-    set_run_font(p.add_run("目　录"), size=16, bold=True)
+    set_run_font(p.add_run("目　录"), size=12, bold=True)
 
     add_toc_field(doc.add_paragraph())
 

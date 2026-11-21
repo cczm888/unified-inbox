@@ -15,14 +15,14 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from _docx_common import DOCS, set_run_font  # noqa: E402
+from _docx_common import DOCS, set_run_font, line_spacing  # noqa: E402
 
 FILES = ["01_需求分析", "02_原型设计", "03_数据库设计",
          "04_接口设计", "05_初步验证", "06_其他"]
 
-LEVEL_STYLE = {"Heading 1": 1, "Heading 2": 2, "Heading 3": 3}
-SIZE = {1: 11, 2: 10, 3: 9.5}
-PREFIX = {1: "", 2: "　　", 3: "　　　　"}
+LEVEL_STYLE = {"Heading 1": 1, "Heading 2": 2}  # 官方：目录仅到二级标题
+SIZE = {1: 12, 2: 12}  # 官方：目录为小四
+PREFIX = {1: "", 2: "　　"}
 
 
 def find_toc_paragraph(doc):
@@ -48,6 +48,7 @@ def collect_headings(doc, after_p):
 
 
 def rebuild(p, headings):
+    line_spacing(p, 1.5)
     for r in list(p.runs):
         r._r.getparent().remove(r._r)
 
@@ -56,7 +57,7 @@ def rebuild(p, headings):
     b.set(qn("w:fldCharType"), "begin")
     instr = OxmlElement("w:instrText")
     instr.set(qn("xml:space"), "preserve")
-    instr.text = ' TOC \\o "1-3" \\h \\z \\u '
+    instr.text = ' TOC \\o "1-2" \\h \\z \\u '
     sep = OxmlElement("w:fldChar")
     sep.set(qn("w:fldCharType"), "separate")
     head._r.append(b)
